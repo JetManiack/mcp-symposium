@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestUpsertActorProfile_CreatesProfileWithTags(t *testing.T) {

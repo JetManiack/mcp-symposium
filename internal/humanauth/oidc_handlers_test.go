@@ -3,7 +3,7 @@ package humanauth_test
 import (
 	"testing"
 
-	"go-ai-rendezvous-point/internal/humanauth"
+	"mcp-symposium/internal/humanauth"
 )
 
 // TestRandomOAuthState_ProducesDistinctNonEmptyValues is the one piece of

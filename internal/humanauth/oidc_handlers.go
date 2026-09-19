@@ -14,7 +14,7 @@ import (
 	"golang.org/x/oauth2"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 // OIDCConfig holds the settings needed to talk to Keycloak.

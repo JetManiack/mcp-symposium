@@ -7,19 +7,20 @@ import (
 	"strings"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
 )
 
 func TestCreateListAndDeleteAgent(t *testing.T) {
 	_, handler := openTestHandler(t)
 
-	createReq := httptest.NewRequest(http.MethodPost, "/agents", strings.NewReader(
+	createReq := httptest.NewRequest(http.MethodPost, "/actors/", strings.NewReader(
 		`{"display_name":"deploy-bot"}`,
 	))
 	createRec := httptest.NewRecorder()
 	handler.ServeHTTP(createRec, createReq)
 	if createRec.Code != http.StatusCreated {
-		t.Fatalf("POST /agents status = %d, body = %s", createRec.Code, createRec.Body.String())
+		t.Fatalf("POST /actors/ status = %d, body = %s", createRec.Code, createRec.Body.String())
 	}
 	var created storage.Actor
 	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
@@ -29,7 +30,7 @@ func TestCreateListAndDeleteAgent(t *testing.T) {
 		t.Errorf("DisplayName = %q, want %q", created.DisplayName, "deploy-bot")
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/agents", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/actors/", nil)
 	listRec := httptest.NewRecorder()
 	handler.ServeHTTP(listRec, listReq)
 	var agents []storage.Actor
@@ -40,11 +41,11 @@ func TestCreateListAndDeleteAgent(t *testing.T) {
 		t.Fatalf("agents = %+v, want exactly the created agent", agents)
 	}
 
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/agents/"+created.ID, nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/actors/"+created.ID, nil)
 	deleteRec := httptest.NewRecorder()
 	handler.ServeHTTP(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusNoContent {
-		t.Fatalf("DELETE /agents/:id status = %d, body = %s", deleteRec.Code, deleteRec.Body.String())
+		t.Fatalf("DELETE /actors/:id status = %d, body = %s", deleteRec.Code, deleteRec.Body.String())
 	}
 }
 
@@ -56,11 +57,11 @@ func TestIssueAndRevokeToken(t *testing.T) {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
 
-	issueReq := httptest.NewRequest(http.MethodPost, "/agents/"+agent.ID+"/tokens", nil)
+	issueReq := httptest.NewRequest(http.MethodPost, "/actors/"+agent.ID+"/credentials", nil)
 	issueRec := httptest.NewRecorder()
 	handler.ServeHTTP(issueRec, issueReq)
 	if issueRec.Code != http.StatusCreated {
-		t.Fatalf("POST /agents/:id/tokens status = %d, body = %s", issueRec.Code, issueRec.Body.String())
+		t.Fatalf("POST /actors/:id/credentials status = %d, body = %s", issueRec.Code, issueRec.Body.String())
 	}
 	var issued struct {
 		Token string `json:"token"`
@@ -72,9 +73,9 @@ func TestIssueAndRevokeToken(t *testing.T) {
 		t.Fatal("issued token is empty")
 	}
 
-	authenticated, err := storage.AuthenticateAgentToken(db, issued.Token)
+	authenticated, err := auth.Authenticate(db, issued.Token)
 	if err != nil {
-		t.Fatalf("AuthenticateAgentToken() error = %v", err)
+		t.Fatalf("auth.Authenticate() error = %v", err)
 	}
 	if authenticated.ID != agent.ID {
 		t.Errorf("authenticated.ID = %q, want %q", authenticated.ID, agent.ID)
@@ -85,15 +86,15 @@ func TestIssueAndRevokeToken(t *testing.T) {
 		t.Fatalf("First(credential) error = %v", err)
 	}
 
-	revokeReq := httptest.NewRequest(http.MethodDelete, "/agents/"+agent.ID+"/tokens/"+cred.ID, nil)
+	revokeReq := httptest.NewRequest(http.MethodDelete, "/credentials/"+cred.ID, nil)
 	revokeRec := httptest.NewRecorder()
 	handler.ServeHTTP(revokeRec, revokeReq)
 	if revokeRec.Code != http.StatusNoContent {
-		t.Fatalf("DELETE /agents/:id/tokens/:token_id status = %d, body = %s", revokeRec.Code, revokeRec.Body.String())
+		t.Fatalf("DELETE /credentials/:id status = %d, body = %s", revokeRec.Code, revokeRec.Body.String())
 	}
 
-	if _, err := storage.AuthenticateAgentToken(db, issued.Token); err != storage.ErrInvalidToken {
-		t.Errorf("AuthenticateAgentToken() after revoke error = %v, want %v", err, storage.ErrInvalidToken)
+	if _, err := auth.Authenticate(db, issued.Token); err != storage.ErrInvalidToken {
+		t.Errorf("auth.Authenticate() after revoke error = %v, want %v", err, storage.ErrInvalidToken)
 	}
 }
 
@@ -106,13 +107,13 @@ func TestIssueAndRevokeToken(t *testing.T) {
 func TestCreateAgent_JSONKeysAreSnakeCase(t *testing.T) {
 	_, handler := openTestHandler(t)
 
-	createReq := httptest.NewRequest(http.MethodPost, "/agents", strings.NewReader(
+	createReq := httptest.NewRequest(http.MethodPost, "/actors/", strings.NewReader(
 		`{"display_name":"deploy-bot"}`,
 	))
 	createRec := httptest.NewRecorder()
 	handler.ServeHTTP(createRec, createReq)
 	if createRec.Code != http.StatusCreated {
-		t.Fatalf("POST /agents status = %d, body = %s", createRec.Code, createRec.Body.String())
+		t.Fatalf("POST /actors/ status = %d, body = %s", createRec.Code, createRec.Body.String())
 	}
 
 	var raw map[string]any
@@ -135,7 +136,7 @@ func TestCreateAgent_JSONKeysAreSnakeCase(t *testing.T) {
 func TestListAgents_ReportsActiveTokenStatus(t *testing.T) {
 	_, handler := openTestHandler(t)
 
-	createReq := httptest.NewRequest(http.MethodPost, "/agents", strings.NewReader(
+	createReq := httptest.NewRequest(http.MethodPost, "/actors/", strings.NewReader(
 		`{"display_name":"deploy-bot"}`,
 	))
 	createRec := httptest.NewRecorder()
@@ -147,7 +148,7 @@ func TestListAgents_ReportsActiveTokenStatus(t *testing.T) {
 
 	assertHasActiveToken := func(want bool) {
 		t.Helper()
-		listReq := httptest.NewRequest(http.MethodGet, "/agents", nil)
+		listReq := httptest.NewRequest(http.MethodGet, "/actors/", nil)
 		listRec := httptest.NewRecorder()
 		handler.ServeHTTP(listRec, listReq)
 		var raw []map[string]any
@@ -168,20 +169,20 @@ func TestListAgents_ReportsActiveTokenStatus(t *testing.T) {
 
 	assertHasActiveToken(false)
 
-	issueReq := httptest.NewRequest(http.MethodPost, "/agents/"+created.ID+"/tokens", nil)
+	issueReq := httptest.NewRequest(http.MethodPost, "/actors/"+created.ID+"/credentials", nil)
 	issueRec := httptest.NewRecorder()
 	handler.ServeHTTP(issueRec, issueReq)
 	if issueRec.Code != http.StatusCreated {
-		t.Fatalf("POST /agents/:id/tokens status = %d, body = %s", issueRec.Code, issueRec.Body.String())
+		t.Fatalf("POST /actors/:id/credentials status = %d, body = %s", issueRec.Code, issueRec.Body.String())
 	}
 
 	assertHasActiveToken(true)
 
-	deleteReq := httptest.NewRequest(http.MethodDelete, "/agents/"+created.ID, nil)
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/actors/"+created.ID, nil)
 	deleteRec := httptest.NewRecorder()
 	handler.ServeHTTP(deleteRec, deleteReq)
 	if deleteRec.Code != http.StatusNoContent {
-		t.Fatalf("DELETE /agents/:id status = %d, body = %s", deleteRec.Code, deleteRec.Body.String())
+		t.Fatalf("DELETE /actors/:id status = %d, body = %s", deleteRec.Code, deleteRec.Body.String())
 	}
 
 	assertHasActiveToken(false)

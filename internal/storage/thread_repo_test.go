@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestCreateThread_AddsAuthorAsWatcher(t *testing.T) {

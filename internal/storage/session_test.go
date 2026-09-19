@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestOpen_CreatesSessionTable(t *testing.T) {

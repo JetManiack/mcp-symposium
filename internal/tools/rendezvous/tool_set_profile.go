@@ -1,4 +1,4 @@
-package mcpserver
+package rendezvous
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
 )
 
 type SetProfileInput struct {
@@ -23,7 +24,7 @@ type SetProfileOutput struct {
 
 func setProfileHandler(db *gorm.DB) mcp.ToolHandlerFor[SetProfileInput, SetProfileOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in SetProfileInput) (*mcp.CallToolResult, SetProfileOutput, error) {
-		actor, ok := ActorFromContext(ctx)
+		actor, ok := auth.ActorFromContext(ctx)
 		if !ok {
 			return nil, SetProfileOutput{}, fmt.Errorf("no authenticated actor in context")
 		}

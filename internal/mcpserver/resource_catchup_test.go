@@ -12,8 +12,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/mcpserver"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 // newTestSessionWithResourceUpdates behaves like newTestSession
@@ -24,7 +26,7 @@ import (
 func newTestSessionWithResourceUpdates(t *testing.T, db *gorm.DB, token string) (*mcp.ClientSession, chan string, func()) {
 	t.Helper()
 
-	srv := httptest.NewServer(mcpserver.NewHTTPHandler(db))
+	srv := httptest.NewServer(mcpserver.Handler(db, []mcpserver.ToolRegistrar{rendezvous.NewRegistrar(db)}))
 
 	httpClient := &http.Client{
 		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
@@ -61,7 +63,7 @@ func newTestSessionWithResourceUpdates(t *testing.T, db *gorm.DB, token string) 
 // the SAME server — never call this once per session.
 func newSharedTestServer(t *testing.T, db *gorm.DB) string {
 	t.Helper()
-	srv := httptest.NewServer(mcpserver.NewHTTPHandler(db))
+	srv := httptest.NewServer(mcpserver.Handler(db, []mcpserver.ToolRegistrar{rendezvous.NewRegistrar(db)}))
 	t.Cleanup(srv.Close)
 	return srv.URL
 }
@@ -106,7 +108,7 @@ func TestCatchUpTool_IncludesActorID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, agent.ID)
+	token, err := auth.Issue(db,agent.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken() error = %v", err)
 	}
@@ -114,7 +116,7 @@ func TestCatchUpTool_IncludesActorID(t *testing.T) {
 	session, cleanup := newTestSession(t, db, token)
 	defer cleanup()
 
-	var out mcpserver.CatchUpOutput
+	var out rendezvous.CatchUpOutput
 	callTool(t, session, "catch_up", map[string]any{}, &out)
 
 	if out.ActorID != agent.ID {
@@ -131,7 +133,7 @@ func TestSubscribeToOwnCatchUpResource_Succeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, agent.ID)
+	token, err := auth.Issue(db,agent.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken() error = %v", err)
 	}
@@ -162,7 +164,7 @@ func TestCatchUpResourceTemplate_IsListedAsATemplateNotAConcreteResource(t *test
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, agent.ID)
+	token, err := auth.Issue(db,agent.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken() error = %v", err)
 	}
@@ -202,7 +204,7 @@ func TestSubscribeToUnknownURIScheme_Fails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, agent.ID)
+	token, err := auth.Issue(db,agent.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken() error = %v", err)
 	}
@@ -229,7 +231,7 @@ func TestSubscribeToAnotherActorsCatchUpResource_Fails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, agentA.ID)
+	tokenA, err := auth.Issue(db,agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
@@ -256,7 +258,7 @@ func TestReadOwnCatchUpResource_ReturnsSummaryWithoutMarkingSeen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenB, err := storage.IssueAgentToken(db, agentB.ID)
+	tokenB, err := auth.Issue(db,agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}
@@ -283,7 +285,7 @@ func TestReadOwnCatchUpResource_ReturnsSummaryWithoutMarkingSeen(t *testing.T) {
 	}
 
 	// Reading the resource must not have marked the mention seen.
-	var out mcpserver.CatchUpOutput
+	var out rendezvous.CatchUpOutput
 	callTool(t, session, "catch_up", map[string]any{}, &out)
 	if len(out.NewMentions) != 1 {
 		t.Errorf("catch_up NewMentions after a resource read = %d, want 1 (resource read must be non-destructive)", len(out.NewMentions))
@@ -303,11 +305,11 @@ func TestAddReply_NotifiesWatcherButNotAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, agentA.ID)
+	tokenA, err := auth.Issue(db,agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
-	tokenB, err := storage.IssueAgentToken(db, agentB.ID)
+	tokenB, err := auth.Issue(db,agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}
@@ -325,18 +327,18 @@ func TestAddReply_NotifiesWatcherButNotAuthor(t *testing.T) {
 		t.Fatalf("agent-b Subscribe() error = %v", err)
 	}
 
-	var created mcpserver.CreateThreadOutput
+	var created rendezvous.CreateThreadOutput
 	callTool(t, sessionA, "create_thread", map[string]any{
 		"title": "Deploy",
 		"body":  "Deploying now",
 	}, &created)
 
-	var watched mcpserver.WatchThreadOutput
+	var watched rendezvous.WatchThreadOutput
 	callTool(t, sessionB, "watch_thread", map[string]any{
 		"thread_id": created.ThreadID,
 	}, &watched)
 
-	var replied mcpserver.ReplyOutput
+	var replied rendezvous.ReplyOutput
 	callTool(t, sessionA, "reply", map[string]any{
 		"thread_id": created.ThreadID,
 		"body":      "Update: still going",
@@ -373,11 +375,11 @@ func TestCreateThread_NotifiesMentionedActor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, agentA.ID)
+	tokenA, err := auth.Issue(db,agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
-	tokenB, err := storage.IssueAgentToken(db, agentB.ID)
+	tokenB, err := auth.Issue(db,agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}
@@ -392,7 +394,7 @@ func TestCreateThread_NotifiesMentionedActor(t *testing.T) {
 		t.Fatalf("agent-b Subscribe() error = %v", err)
 	}
 
-	var created mcpserver.CreateThreadOutput
+	var created rendezvous.CreateThreadOutput
 	callTool(t, sessionA, "create_thread", map[string]any{
 		"title": "Deploy",
 		"body":  "Deploying now, cc @agent-b",

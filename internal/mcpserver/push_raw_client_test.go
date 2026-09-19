@@ -40,8 +40,10 @@ import (
 	"testing"
 	"time"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/mcpserver"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 // newRawTestServer starts an httptest server whose *http.Server can be
@@ -212,16 +214,16 @@ func TestPushNotification_RealStandingGETStream_ReceivesResourceUpdated(t *testi
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, agentA.ID)
+	tokenA, err := auth.Issue(db, agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
-	tokenB, err := storage.IssueAgentToken(db, agentB.ID)
+	tokenB, err := auth.Issue(db, agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}
 
-	srv := httptest.NewServer(mcpserver.NewHTTPHandler(db))
+	srv := httptest.NewServer(mcpserver.Handler(db, []mcpserver.ToolRegistrar{rendezvous.NewRegistrar(db)}))
 	defer srv.Close()
 
 	// agent B: initialize, subscribe to its own catch-up feed, then hold
@@ -290,16 +292,16 @@ func TestPushNotification_WatcherPathWithRealisticDelay_RawClient(t *testing.T) 
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, agentA.ID)
+	tokenA, err := auth.Issue(db, agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
-	tokenB, err := storage.IssueAgentToken(db, agentB.ID)
+	tokenB, err := auth.Issue(db, agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}
 
-	srv := httptest.NewServer(mcpserver.NewHTTPHandler(db))
+	srv := httptest.NewServer(mcpserver.Handler(db, []mcpserver.ToolRegistrar{rendezvous.NewRegistrar(db)}))
 	defer srv.Close()
 
 	sessionA := initializeRawSession(t, srv.URL, tokenA)
@@ -387,17 +389,17 @@ func TestPushNotification_DelayedPushSurvivesServerWriteTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, agentA.ID)
+	tokenA, err := auth.Issue(db, agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
-	tokenB, err := storage.IssueAgentToken(db, agentB.ID)
+	tokenB, err := auth.Issue(db, agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}
 
 	const writeTimeout = 500 * time.Millisecond
-	srv := newRawTestServer(t, mcpserver.NewHTTPHandler(db), func(s *http.Server) {
+	srv := newRawTestServer(t, mcpserver.Handler(db, []mcpserver.ToolRegistrar{rendezvous.NewRegistrar(db)}), func(s *http.Server) {
 		s.WriteTimeout = writeTimeout
 	})
 

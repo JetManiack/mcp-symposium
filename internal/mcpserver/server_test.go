@@ -11,8 +11,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/mcpserver"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
@@ -25,7 +27,7 @@ func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { r
 func newTestSession(t *testing.T, db *gorm.DB, token string) (*mcp.ClientSession, func()) {
 	t.Helper()
 
-	srv := httptest.NewServer(mcpserver.NewHTTPHandler(db))
+	srv := httptest.NewServer(mcpserver.Handler(db, []mcpserver.ToolRegistrar{rendezvous.NewRegistrar(db)}))
 
 	httpClient := &http.Client{
 		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
@@ -84,15 +86,15 @@ func TestCreateThreadTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, actor.ID)
+	token, err := auth.Issue(db, actor.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken() error = %v", err)
+		t.Fatalf("auth.Issue() error = %v", err)
 	}
 
 	session, cleanup := newTestSession(t, db, token)
 	defer cleanup()
 
-	var out mcpserver.CreateThreadOutput
+	var out rendezvous.CreateThreadOutput
 	callTool(t, session, "create_thread", map[string]any{
 		"title": "New feature X",
 		"body":  "Shipped feature X, see docs.",

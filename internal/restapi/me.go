@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"go-ai-rendezvous-point/internal/humanauth"
+	"mcp-symposium/internal/humanauth"
 )
 
 type meResponse struct {

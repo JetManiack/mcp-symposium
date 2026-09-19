@@ -3,7 +3,7 @@ package storage_test
 import (
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestResolveThread_SetsStatusToResolved(t *testing.T) {

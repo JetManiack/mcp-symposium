@@ -10,9 +10,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/humanauth"
-	"go-ai-rendezvous-point/internal/restapi"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/humanauth"
+	"mcp-symposium/internal/restapi"
+	"mcp-symposium/internal/storage"
 )
 
 type viewerStubProvider struct{}
@@ -110,21 +110,21 @@ func TestRoleGating_ViewerCannotReplyOrChangeStatus(t *testing.T) {
 func TestRoleGating_ViewerCannotAccessAgents(t *testing.T) {
 	_, handler := openTestHandlerAsViewer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/agents", nil)
+	req := httptest.NewRequest(http.MethodGet, "/actors/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusForbidden {
-		t.Fatalf("GET /agents as viewer status = %d, want %d", rec.Code, http.StatusForbidden)
+		t.Fatalf("GET /actors/ as viewer status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 }
 
 func TestRoleGating_AdminCanAccessEverything(t *testing.T) {
 	_, handler := openTestHandler(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/agents", nil)
+	req := httptest.NewRequest(http.MethodGet, "/actors/", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /agents as admin status = %d, want %d", rec.Code, http.StatusOK)
+		t.Fatalf("GET /actors/ as admin status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }

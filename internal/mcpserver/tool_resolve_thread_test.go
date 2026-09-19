@@ -4,8 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 func TestResolveAndReopenThreadTools(t *testing.T) {
@@ -17,21 +18,21 @@ func TestResolveAndReopenThreadTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, agent.ID)
+	token, err := auth.Issue(db, agent.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken() error = %v", err)
+		t.Fatalf("auth.Issue() error = %v", err)
 	}
 
 	session, cleanup := newTestSession(t, db, token)
 	defer cleanup()
 
-	var created mcpserver.CreateThreadOutput
+	var created rendezvous.CreateThreadOutput
 	callTool(t, session, "create_thread", map[string]any{
 		"title": "Deploy",
 		"body":  "body",
 	}, &created)
 
-	var resolved mcpserver.ResolveThreadOutput
+	var resolved rendezvous.ResolveThreadOutput
 	callTool(t, session, "resolve_thread", map[string]any{
 		"thread_id": created.ThreadID,
 	}, &resolved)
@@ -39,7 +40,7 @@ func TestResolveAndReopenThreadTools(t *testing.T) {
 		t.Fatalf("resolve_thread Status = %q, want %q", resolved.Status, "resolved")
 	}
 
-	var reopened mcpserver.ReopenThreadOutput
+	var reopened rendezvous.ReopenThreadOutput
 	callTool(t, session, "reopen_thread", map[string]any{
 		"thread_id": created.ThreadID,
 	}, &reopened)

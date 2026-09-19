@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/humanauth"
+	"mcp-symposium/internal/humanauth"
 )
 
 // NewHandler builds the full REST API handler, mounted with no path
@@ -32,13 +32,21 @@ func NewHandler(db *gorm.DB, provider humanauth.Provider) http.Handler {
 	r.With(humanauth.RequireAdmin).Put("/profiles/{actorID}", updateProfileByIDHandler(db))
 	r.Put("/me/profile", updateOwnProfileHandler(db))
 
-	r.Route("/agents", func(r chi.Router) {
+	// Agent / credential management (admin only)
+	r.Route("/actors", func(r chi.Router) {
 		r.Use(humanauth.RequireAdmin)
 		r.Get("/", listAgentsHandler(db))
 		r.Post("/", createAgentHandler(db))
 		r.Delete("/{id}", deleteAgentHandler(db))
-		r.Post("/{id}/tokens", issueTokenHandler(db))
-		r.Delete("/{id}/tokens/{tokenID}", revokeTokenHandler(db))
+		r.Post("/{id}/credentials", issueTokenHandler(db))
+	})
+	r.With(humanauth.RequireAdmin).Delete("/credentials/{id}", revokeTokenHandler(db))
+
+	// Tool-call audit log (admin only)
+	r.Route("/tool-calls", func(r chi.Router) {
+		r.Use(humanauth.RequireAdmin)
+		r.Get("/", listToolCallsHandler(db))
+		r.Get("/{id}", getToolCallHandler(db))
 	})
 
 	r.Get("/me", meHandler())

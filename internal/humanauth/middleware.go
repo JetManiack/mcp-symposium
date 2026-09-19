@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 type contextKey string

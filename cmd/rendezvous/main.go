@@ -15,12 +15,13 @@ import (
 	"github.com/urfave/cli/v3"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/frontend"
-	"go-ai-rendezvous-point/internal/health"
-	"go-ai-rendezvous-point/internal/humanauth"
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/restapi"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/frontend"
+	"mcp-symposium/internal/health"
+	"mcp-symposium/internal/humanauth"
+	"mcp-symposium/internal/mcpserver"
+	"mcp-symposium/internal/restapi"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 func newRootCommand() *cli.Command {
@@ -148,15 +149,33 @@ func buildAppHandler(ctx context.Context, cmd *cli.Command, db *gorm.DB) (http.H
 		OIDCReady:       true,
 	}
 
+	tools := []mcpserver.ToolRegistrar{
+		rendezvous.NewRegistrar(db),
+	}
+
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcpserver.NewHTTPHandler(db))
+	mux.Handle("/mcp", mcpserver.Handler(db, tools))
 	mux.Handle("/api/", http.StripPrefix("/api", restapi.NewHandler(db, authProvider)))
 	if useOIDC {
 		mux.HandleFunc("/auth/login", oidcHandlers.Login)
 		mux.HandleFunc("/auth/callback", oidcHandlers.Callback)
 		mux.HandleFunc("/auth/logout", oidcHandlers.Logout)
 	}
-	mux.Handle("/", http.FileServer(frontendFS))
+	// Serve static files; fall back to index.html for client-side routes
+	// so BrowserRouter navigation works without a server-side route for each path.
+	fileServer := http.FileServer(frontendFS)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		f, err := frontendFS.Open(r.URL.Path)
+		if err == nil {
+			f.Close()
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+		// Unknown path — serve the SPA shell and let the client router handle it.
+		r2 := *r
+		r2.URL.Path = "/"
+		fileServer.ServeHTTP(w, &r2)
+	})
 
 	return mux, readyChecker, nil
 }

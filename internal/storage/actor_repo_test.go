@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
 	"gorm.io/gorm"
+
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
 )
 
 func openTestDB(t *testing.T) *gorm.DB {
@@ -33,17 +35,17 @@ func TestIssueAndAuthenticateAgentToken(t *testing.T) {
 		t.Errorf("Kind = %q, want %q", actor.Kind, storage.ActorKindAgent)
 	}
 
-	token, err := storage.IssueAgentToken(db, actor.ID)
+	token, err := auth.Issue(db, actor.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken() error = %v", err)
+		t.Fatalf("auth.Issue() error = %v", err)
 	}
 	if token == "" {
-		t.Fatal("IssueAgentToken() returned empty token")
+		t.Fatal("auth.Issue() returned empty token")
 	}
 
-	authenticated, err := storage.AuthenticateAgentToken(db, token)
+	authenticated, err := auth.Authenticate(db, token)
 	if err != nil {
-		t.Fatalf("AuthenticateAgentToken() error = %v", err)
+		t.Fatalf("auth.Authenticate() error = %v", err)
 	}
 	if authenticated.ID != actor.ID {
 		t.Errorf("authenticated.ID = %q, want %q", authenticated.ID, actor.ID)
@@ -53,8 +55,8 @@ func TestIssueAndAuthenticateAgentToken(t *testing.T) {
 func TestAuthenticateAgentToken_RejectsUnknownToken(t *testing.T) {
 	db := openTestDB(t)
 
-	if _, err := storage.AuthenticateAgentToken(db, "arp_does-not-exist"); err != storage.ErrInvalidToken {
-		t.Errorf("AuthenticateAgentToken() error = %v, want %v", err, storage.ErrInvalidToken)
+	if _, err := auth.Authenticate(db, "arp_does-not-exist"); err != storage.ErrInvalidToken {
+		t.Errorf("auth.Authenticate() error = %v, want %v", err, storage.ErrInvalidToken)
 	}
 }
 
@@ -86,9 +88,9 @@ func TestRevokeAgentToken_PreventsFurtherAuthentication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, actor.ID)
+	token, err := auth.Issue(db, actor.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken() error = %v", err)
+		t.Fatalf("auth.Issue() error = %v", err)
 	}
 
 	var cred storage.AgentCredential
@@ -100,8 +102,8 @@ func TestRevokeAgentToken_PreventsFurtherAuthentication(t *testing.T) {
 		t.Fatalf("RevokeAgentToken() error = %v", err)
 	}
 
-	if _, err := storage.AuthenticateAgentToken(db, token); err != storage.ErrInvalidToken {
-		t.Errorf("AuthenticateAgentToken() error = %v, want %v", err, storage.ErrInvalidToken)
+	if _, err := auth.Authenticate(db, token); err != storage.ErrInvalidToken {
+		t.Errorf("auth.Authenticate() error = %v, want %v", err, storage.ErrInvalidToken)
 	}
 }
 
@@ -111,23 +113,23 @@ func TestRevokeAllAgentCredentials_RevokesEveryTokenForTheActor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, actor.ID)
+	tokenA, err := auth.Issue(db, actor.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken(1) error = %v", err)
+		t.Fatalf("auth.Issue(1) error = %v", err)
 	}
-	tokenB, err := storage.IssueAgentToken(db, actor.ID)
+	tokenB, err := auth.Issue(db, actor.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken(2) error = %v", err)
+		t.Fatalf("auth.Issue(2) error = %v", err)
 	}
 
 	if err := storage.RevokeAllAgentCredentials(db, actor.ID); err != nil {
 		t.Fatalf("RevokeAllAgentCredentials() error = %v", err)
 	}
 
-	if _, err := storage.AuthenticateAgentToken(db, tokenA); err != storage.ErrInvalidToken {
-		t.Errorf("AuthenticateAgentToken(tokenA) error = %v, want %v", err, storage.ErrInvalidToken)
+	if _, err := auth.Authenticate(db, tokenA); err != storage.ErrInvalidToken {
+		t.Errorf("auth.Authenticate(tokenA) error = %v, want %v", err, storage.ErrInvalidToken)
 	}
-	if _, err := storage.AuthenticateAgentToken(db, tokenB); err != storage.ErrInvalidToken {
-		t.Errorf("AuthenticateAgentToken(tokenB) error = %v, want %v", err, storage.ErrInvalidToken)
+	if _, err := auth.Authenticate(db, tokenB); err != storage.ErrInvalidToken {
+		t.Errorf("auth.Authenticate(tokenB) error = %v, want %v", err, storage.ErrInvalidToken)
 	}
 }

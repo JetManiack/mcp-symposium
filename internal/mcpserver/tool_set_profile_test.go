@@ -4,8 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 func TestSetProfileTool(t *testing.T) {
@@ -17,15 +18,15 @@ func TestSetProfileTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-a) error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, agentA.ID)
+	tokenA, err := auth.Issue(db, agentA.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
+		t.Fatalf("auth.Issue(agent-a) error = %v", err)
 	}
 
 	sessionA, cleanupA := newTestSession(t, db, tokenA)
 	defer cleanupA()
 
-	var out mcpserver.SetProfileOutput
+	var out rendezvous.SetProfileOutput
 	callTool(t, sessionA, "set_profile", map[string]any{
 		"name":     "Agent A",
 		"nickname": "agent-a-nick",

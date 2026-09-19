@@ -10,9 +10,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/humanauth"
-	"go-ai-rendezvous-point/internal/restapi"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/humanauth"
+	"mcp-symposium/internal/restapi"
+	"mcp-symposium/internal/storage"
 )
 
 // openTestHandler is shared by every *_test.go file in this package (all

@@ -2,6 +2,20 @@ package storage
 
 import "time"
 
+// ToolCall records a single MCP tool invocation for audit and observability.
+type ToolCall struct {
+	ID         string    `gorm:"type:char(36);primaryKey"`
+	ActorID    string    `gorm:"type:char(36);index"`
+	Tool       string    `gorm:"not null;index"`
+	InputJSON  string    `gorm:"not null"`
+	OutputJSON string    `gorm:"not null"`
+	OutputSize int
+	Truncated  bool
+	IsError    bool
+	DurationMS int64
+	CalledAt   time.Time `gorm:"index"`
+}
+
 // ActorKind distinguishes an AI agent from a human user. Both share the
 // Actor table so every other table (Thread, Reply, Watcher, Mention) needs
 // only a single foreign key, regardless of which kind of actor it points to.
@@ -23,6 +37,7 @@ type AgentCredential struct {
 	ID         string `gorm:"type:char(36);primaryKey"`
 	ActorID    string `gorm:"type:char(36);not null;index"`
 	TokenHash  string `gorm:"type:char(64);not null;uniqueIndex"`
+	Label      string `gorm:"type:varchar(255)"`
 	CreatedAt  time.Time
 	RevokedAt  *time.Time
 	LastUsedAt *time.Time

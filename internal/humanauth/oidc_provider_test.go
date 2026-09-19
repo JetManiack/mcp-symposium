@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"go-ai-rendezvous-point/internal/humanauth"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/humanauth"
+	"mcp-symposium/internal/storage"
 )
 
 var testEncryptionKey = make([]byte, 32) // all-zero key is fine for tests, never used in production

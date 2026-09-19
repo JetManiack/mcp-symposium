@@ -1,4 +1,4 @@
-module go-ai-rendezvous-point
+module mcp-symposium
 
 go 1.26
 

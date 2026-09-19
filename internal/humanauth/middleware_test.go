@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/humanauth"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/humanauth"
+	"mcp-symposium/internal/storage"
 )
 
 // failingProvider always fails authentication, so tests can exercise

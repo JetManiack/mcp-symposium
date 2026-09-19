@@ -3,7 +3,7 @@ package storage_test
 import (
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestCatchUp_ReturnsUnreadRepliesAndMentionsOnce(t *testing.T) {

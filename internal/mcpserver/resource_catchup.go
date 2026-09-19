@@ -9,7 +9,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
 )
 
 const catchUpURIPrefix = "rendezvous://catchup/"
@@ -36,7 +37,7 @@ func actorIDFromCatchUpURI(uri string) (string, bool) {
 // isn't the caller's own — an agent can only ever subscribe to its own
 // feed, mirroring set_profile's self-only model.
 func subscribeHandler(ctx context.Context, req *mcp.SubscribeRequest) error {
-	actor, ok := ActorFromContext(ctx)
+	actor, ok := auth.ActorFromContext(ctx)
 	if !ok {
 		return fmt.Errorf("no authenticated actor in context")
 	}
@@ -65,7 +66,7 @@ func unsubscribeHandler(ctx context.Context, req *mcp.UnsubscribeRequest) error 
 // sees the notification.
 func catchUpResourceHandler(db *gorm.DB) mcp.ResourceHandler {
 	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		actor, ok := ActorFromContext(ctx)
+		actor, ok := auth.ActorFromContext(ctx)
 		if !ok {
 			return nil, fmt.Errorf("no authenticated actor in context")
 		}

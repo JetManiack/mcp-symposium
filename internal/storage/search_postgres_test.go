@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestSearchPostgres_FindsMatchingThreadsAndReplies(t *testing.T) {

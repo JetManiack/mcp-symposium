@@ -4,8 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 func TestWatchAndUnwatchThreadTools(t *testing.T) {
@@ -25,19 +26,19 @@ func TestWatchAndUnwatchThreadTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-c) error = %v", err)
 	}
-	tokenA, err := storage.IssueAgentToken(db, agentA.ID)
+	tokenA, err := auth.Issue(db, agentA.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
+		t.Fatalf("auth.Issue(agent-a) error = %v", err)
 	}
-	tokenC, err := storage.IssueAgentToken(db, agentC.ID)
+	tokenC, err := auth.Issue(db, agentC.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken(agent-c) error = %v", err)
+		t.Fatalf("auth.Issue(agent-c) error = %v", err)
 	}
 
 	sessionA, cleanupA := newTestSession(t, db, tokenA)
 	defer cleanupA()
 
-	var created mcpserver.CreateThreadOutput
+	var created rendezvous.CreateThreadOutput
 	callTool(t, sessionA, "create_thread", map[string]any{
 		"title": "Deploy",
 		"body":  "body",
@@ -46,7 +47,7 @@ func TestWatchAndUnwatchThreadTools(t *testing.T) {
 	sessionC, cleanupC := newTestSession(t, db, tokenC)
 	defer cleanupC()
 
-	var watched mcpserver.WatchThreadOutput
+	var watched rendezvous.WatchThreadOutput
 	callTool(t, sessionC, "watch_thread", map[string]any{
 		"thread_id": created.ThreadID,
 	}, &watched)
@@ -58,13 +59,13 @@ func TestWatchAndUnwatchThreadTools(t *testing.T) {
 		t.Fatalf("AddReply() error = %v", err)
 	}
 
-	var caughtUp mcpserver.CatchUpOutput
+	var caughtUp rendezvous.CatchUpOutput
 	callTool(t, sessionC, "catch_up", map[string]any{}, &caughtUp)
 	if len(caughtUp.UnreadReplies) != 1 {
 		t.Fatalf("UnreadReplies while watching = %+v, want exactly one reply", caughtUp.UnreadReplies)
 	}
 
-	var unwatched mcpserver.UnwatchThreadOutput
+	var unwatched rendezvous.UnwatchThreadOutput
 	callTool(t, sessionC, "unwatch_thread", map[string]any{
 		"thread_id": created.ThreadID,
 	}, &unwatched)
@@ -76,7 +77,7 @@ func TestWatchAndUnwatchThreadTools(t *testing.T) {
 		t.Fatalf("second AddReply() error = %v", err)
 	}
 
-	var secondCatchUp mcpserver.CatchUpOutput
+	var secondCatchUp rendezvous.CatchUpOutput
 	callTool(t, sessionC, "catch_up", map[string]any{}, &secondCatchUp)
 	if len(secondCatchUp.UnreadReplies) != 0 {
 		t.Fatalf("UnreadReplies after unwatch = %+v, want empty", secondCatchUp.UnreadReplies)

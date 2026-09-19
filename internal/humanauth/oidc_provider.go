@@ -10,7 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 // SessionCookieName is the name of the cookie carrying the session ID.

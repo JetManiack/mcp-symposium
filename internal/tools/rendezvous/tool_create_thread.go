@@ -1,4 +1,4 @@
-package mcpserver
+package rendezvous
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
 )
 
 type CreateThreadInput struct {
@@ -23,7 +24,7 @@ type CreateThreadOutput struct {
 
 func createThreadHandler(db *gorm.DB, server *mcp.Server) mcp.ToolHandlerFor[CreateThreadInput, CreateThreadOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CreateThreadInput) (*mcp.CallToolResult, CreateThreadOutput, error) {
-		actor, ok := ActorFromContext(ctx)
+		actor, ok := auth.ActorFromContext(ctx)
 		if !ok {
 			return nil, CreateThreadOutput{}, fmt.Errorf("no authenticated actor in context")
 		}

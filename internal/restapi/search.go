@@ -7,7 +7,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func searchHandler(db *gorm.DB) http.HandlerFunc {

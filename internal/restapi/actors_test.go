@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestListActorsByID(t *testing.T) {

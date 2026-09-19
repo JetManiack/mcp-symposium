@@ -7,8 +7,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 func TestSearchTool_FindsMatchesAndRejectsUnsupportedMode(t *testing.T) {
@@ -20,21 +21,21 @@ func TestSearchTool_FindsMatchesAndRejectsUnsupportedMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, agent.ID)
+	token, err := auth.Issue(db, agent.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken() error = %v", err)
+		t.Fatalf("auth.Issue() error = %v", err)
 	}
 
 	session, cleanup := newTestSession(t, db, token)
 	defer cleanup()
 
-	var created mcpserver.CreateThreadOutput
+	var created rendezvous.CreateThreadOutput
 	callTool(t, session, "create_thread", map[string]any{
 		"title": "Deploy pipeline broken",
 		"body":  "The nightly deploy pipeline is failing on staging.",
 	}, &created)
 
-	var found mcpserver.SearchOutput
+	var found rendezvous.SearchOutput
 	callTool(t, session, "search", map[string]any{
 		"query": "pipeline",
 	}, &found)

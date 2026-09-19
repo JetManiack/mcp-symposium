@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-//go:generate esbuild ../../web/src/index.jsx --bundle --loader:.jsx=jsx --jsx-factory=React.createElement --jsx-fragment=React.Fragment --target=es2017 --minify --outfile=static/js/app.bundle.js
+//go:generate esbuild ../../web/src/index.jsx --bundle --loader:.jsx=jsx --jsx=automatic --target=es2017 --minify --outfile=static/js/app.bundle.js
 
 //go:embed static/*
 var assets embed.FS

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestPutMeProfile_UpsertsOwnProfileForAnyRole(t *testing.T) {

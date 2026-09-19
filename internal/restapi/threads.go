@@ -11,8 +11,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/humanauth"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/humanauth"
+	"mcp-symposium/internal/storage"
 )
 
 type createThreadRequest struct {

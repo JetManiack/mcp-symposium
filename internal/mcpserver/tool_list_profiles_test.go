@@ -4,8 +4,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
+	"mcp-symposium/internal/tools/rendezvous"
 )
 
 func TestListProfilesTool_IncludesOnboardedAndBareActors(t *testing.T) {
@@ -24,15 +25,15 @@ func TestListProfilesTool_IncludesOnboardedAndBareActors(t *testing.T) {
 	if _, err := storage.UpsertActorProfile(db, onboarded.ID, "Onboarded", "onboarded-nick", "bio", []string{"ops"}); err != nil {
 		t.Fatalf("UpsertActorProfile() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, bare.ID)
+	token, err := auth.Issue(db, bare.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken(agent-bare) error = %v", err)
+		t.Fatalf("auth.Issue(agent-bare) error = %v", err)
 	}
 
 	session, cleanup := newTestSession(t, db, token)
 	defer cleanup()
 
-	var out mcpserver.ListProfilesOutput
+	var out rendezvous.ListProfilesOutput
 	callTool(t, session, "list_profiles", map[string]any{}, &out)
 
 	var sawOnboarded, sawBare bool

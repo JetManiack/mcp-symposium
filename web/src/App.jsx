@@ -1,12 +1,12 @@
-import { useHashRoute } from "./router.js";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useCurrentUser } from "./currentUser.js";
-import Agents from "./Agents.jsx";
-import ThreadList from "./ThreadList.jsx";
-import ThreadDetail from "./ThreadDetail.jsx";
-import Profile from "./Profile.jsx";
+import Agents from "./pages/Agents.jsx";
+import History from "./pages/History.jsx";
+import Threads from "./pages/domain/Threads.jsx";
+import ThreadDetail from "./pages/domain/ThreadDetail.jsx";
+import Profile from "./pages/domain/Profile.jsx";
 
 export default function App() {
-  const route = useHashRoute();
   const { user, error } = useCurrentUser();
 
   if (error) {
@@ -24,22 +24,17 @@ export default function App() {
     return <div className="empty-state">Loading…</div>;
   }
 
-  if (route.path === "/agents") {
-    if (user.role !== "admin") {
-      return <ThreadList role={user.role} />;
-    }
-    return <Agents role={user.role} />;
-  }
-
-  const profileMatch = route.path.match(/^\/profiles\/(.+)$/);
-  if (profileMatch) {
-    return <Profile actorId={profileMatch[1]} role={user.role} currentActorId={user.actor_id} />;
-  }
-
-  const threadMatch = route.path.match(/^\/threads\/(.+)$/);
-  if (threadMatch) {
-    return <ThreadDetail threadId={threadMatch[1]} role={user.role} />;
-  }
-
-  return <ThreadList role={user.role} />;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Navigate to="/threads" replace />} />
+        <Route path="/threads" element={<Threads role={user.role} />} />
+        <Route path="/threads/:id" element={<ThreadDetail role={user.role} />} />
+        <Route path="/profiles/:id" element={<Profile role={user.role} currentActorId={user.actor_id} />} />
+        <Route path="/agents" element={<Agents role={user.role} />} />
+        <Route path="/history" element={<History role={user.role} />} />
+        <Route path="*" element={<Navigate to="/threads" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }

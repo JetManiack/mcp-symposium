@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/frontend"
+	"mcp-symposium/internal/frontend"
 )
 
 func TestFS_ServesIndexHTML(t *testing.T) {

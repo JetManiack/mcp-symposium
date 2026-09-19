@@ -1,4 +1,4 @@
-package mcpserver
+package rendezvous
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 type ListProfilesInput struct{}

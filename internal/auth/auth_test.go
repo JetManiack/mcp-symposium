@@ -1,4 +1,4 @@
-package mcpserver_test
+package auth_test
 
 import (
 	"net/http"
@@ -6,17 +6,17 @@ import (
 	"path/filepath"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/mcpserver"
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
 )
 
-func TestRequireAgentToken_RejectsMissingToken(t *testing.T) {
+func TestRequireBearer_RejectsMissingToken(t *testing.T) {
 	db, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
 
-	handler := mcpserver.RequireAgentToken(db, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := auth.RequireBearer(db, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -27,15 +27,18 @@ func TestRequireAgentToken_RejectsMissingToken(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+	if rec.Header().Get("WWW-Authenticate") == "" {
+		t.Error("WWW-Authenticate header missing on 401 (missing token)")
+	}
 }
 
-func TestRequireAgentToken_RejectsUnknownToken(t *testing.T) {
+func TestRequireBearer_RejectsUnknownToken(t *testing.T) {
 	db, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
 
-	handler := mcpserver.RequireAgentToken(db, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := auth.RequireBearer(db, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -47,9 +50,12 @@ func TestRequireAgentToken_RejectsUnknownToken(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+	if rec.Header().Get("WWW-Authenticate") == "" {
+		t.Error("WWW-Authenticate header missing on 401 (invalid token)")
+	}
 }
 
-func TestRequireAgentToken_AcceptsValidTokenAndSetsActor(t *testing.T) {
+func TestRequireBearer_AcceptsValidTokenAndSetsActor(t *testing.T) {
 	db, err := storage.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
@@ -58,14 +64,14 @@ func TestRequireAgentToken_AcceptsValidTokenAndSetsActor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := storage.IssueAgentToken(db, actor.ID)
+	token, err := auth.Issue(db, actor.ID)
 	if err != nil {
-		t.Fatalf("IssueAgentToken() error = %v", err)
+		t.Fatalf("auth.Issue() error = %v", err)
 	}
 
 	var gotActorID string
-	handler := mcpserver.RequireAgentToken(db, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		a, ok := mcpserver.ActorFromContext(r.Context())
+	handler := auth.RequireBearer(db, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a, ok := auth.ActorFromContext(r.Context())
 		if !ok {
 			t.Error("ActorFromContext() found no actor")
 		} else {

@@ -205,8 +205,8 @@ func TestServeCommand_ServesFrontend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read /js/app.bundle.js body error = %v", err)
 	}
-	if !strings.Contains(string(bundleBody), "/api/agents") {
-		t.Error("/js/app.bundle.js does not reference /api/agents — the Agents screen may not actually be bundled")
+	if !strings.Contains(string(bundleBody), "/api/actors") {
+		t.Error("/js/app.bundle.js does not reference /api/actors — the Agents screen may not actually be bundled")
 	}
 
 	cancel()

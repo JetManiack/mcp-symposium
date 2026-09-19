@@ -7,7 +7,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
 )
 
 type createAgentRequest struct {
@@ -93,7 +94,7 @@ func issueTokenHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		agentID := chi.URLParam(r, "id")
 
-		token, err := storage.IssueAgentToken(db, agentID)
+		token, err := auth.Issue(db, agentID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -104,7 +105,7 @@ func issueTokenHandler(db *gorm.DB) http.HandlerFunc {
 
 func revokeTokenHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tokenID := chi.URLParam(r, "tokenID")
+		tokenID := chi.URLParam(r, "id")
 
 		if err := storage.RevokeAgentToken(db, tokenID); err != nil {
 			writeError(w, http.StatusInternalServerError, err)

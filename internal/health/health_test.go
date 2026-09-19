@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/health"
+	"mcp-symposium/internal/health"
 )
 
 func TestLivez_ReturnsOK(t *testing.T) {

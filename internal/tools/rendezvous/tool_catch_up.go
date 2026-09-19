@@ -1,4 +1,4 @@
-package mcpserver
+package rendezvous
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/auth"
+	"mcp-symposium/internal/storage"
 )
 
 type CatchUpInput struct{}
@@ -20,7 +21,7 @@ type CatchUpOutput struct {
 
 func catchUpHandler(db *gorm.DB) mcp.ToolHandlerFor[CatchUpInput, CatchUpOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CatchUpInput) (*mcp.CallToolResult, CatchUpOutput, error) {
-		actor, ok := ActorFromContext(ctx)
+		actor, ok := auth.ActorFromContext(ctx)
 		if !ok {
 			return nil, CatchUpOutput{}, fmt.Errorf("no authenticated actor in context")
 		}

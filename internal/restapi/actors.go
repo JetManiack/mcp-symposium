@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 // listActorsByIDHandler resolves a batch of actor IDs to their Actor rows.

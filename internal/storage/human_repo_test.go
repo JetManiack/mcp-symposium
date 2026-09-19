@@ -4,7 +4,7 @@ import (
 	"sync"
 	"testing"
 
-	"go-ai-rendezvous-point/internal/storage"
+	"mcp-symposium/internal/storage"
 )
 
 func TestGetOrCreateHumanActor_CreatesOnFirstCall(t *testing.T) {
