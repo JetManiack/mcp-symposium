@@ -155,6 +155,10 @@ func buildAppHandler(ctx context.Context, cmd *cli.Command, db *gorm.DB) (http.H
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpserver.Handler(db, tools))
+	// Agent-token REST twin of the peek tool; registered before the catch-all
+	// /api/ so it wins, and authenticated like /mcp (agent bearer), not like
+	// the human REST API.
+	mux.Handle("/api/me/unread", restapi.AgentUnreadHandler(db))
 	mux.Handle("/api/", http.StripPrefix("/api", restapi.NewHandler(db, authProvider)))
 	if useOIDC {
 		mux.HandleFunc("/auth/login", oidcHandlers.Login)

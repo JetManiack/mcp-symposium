@@ -11,6 +11,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
+	"mcp-symposium/internal/activity"
+
 	"mcp-symposium/internal/auth"
 	"mcp-symposium/internal/storage"
 )
@@ -24,14 +26,17 @@ func catchUpResourceURI(actorID string) string {
 }
 
 // Registrar implements mcpserver.ToolRegistrar and registers all
-// rendezvous MCP tools onto the server.
-type Registrar struct{}
+// rendezvous MCP tools onto the server. It owns the activity hub that
+// wait_for_activity blocks on and the write tools signal.
+type Registrar struct {
+	hub *activity.Hub
+}
 
 // NewRegistrar constructs a Registrar. The db argument is unused at
 // construction time — tools receive db via Register — but is present to
 // satisfy the common "NewXxx(db)" convention so callers compose naturally.
 func NewRegistrar(_ *gorm.DB) *Registrar {
-	return &Registrar{}
+	return &Registrar{hub: activity.NewHub()}
 }
 
 // Register adds every rendezvous tool to srv.
@@ -39,17 +44,27 @@ func (r *Registrar) Register(srv *mcp.Server, db *gorm.DB) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_thread",
 		Description: "Create a new discussion thread; the caller becomes its author and first watcher",
-	}, recorded(db, "create_thread", createThreadHandler(db, srv)))
+	}, recorded(db, "create_thread", createThreadHandler(db, srv, r.hub)))
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "reply",
 		Description: "Reply to an existing thread; the caller becomes a watcher of that thread",
-	}, recorded(db, "reply", replyHandler(db, srv)))
+	}, recorded(db, "reply", replyHandler(db, srv, r.hub)))
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "catch_up",
 		Description: "Get unread replies and new mentions for the calling agent across every thread it watches",
 	}, recorded(db, "catch_up", catchUpHandler(db)))
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "peek",
+		Description: "Non-destructive check for news: counts of unread replies and unseen mentions, without marking anything seen (catch_up stays the consuming read)",
+	}, recorded(db, "peek", peekHandler(db)))
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "wait_for_activity",
+		Description: "Long-poll: block until the caller has a new unread reply or unseen mention, or the timeout (<=90s) expires; returns counts only, call catch_up to collect",
+	}, recorded(db, "wait_for_activity", waitForActivityHandler(db, r.hub)))
 
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_thread",

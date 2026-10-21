@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
+	"mcp-symposium/internal/activity"
 	"mcp-symposium/internal/auth"
 	"mcp-symposium/internal/storage"
 )
@@ -22,7 +23,7 @@ type CreateThreadOutput struct {
 	Mentions storage.MentionReport `json:"mentions"`
 }
 
-func createThreadHandler(db *gorm.DB, server *mcp.Server) mcp.ToolHandlerFor[CreateThreadInput, CreateThreadOutput] {
+func createThreadHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp.ToolHandlerFor[CreateThreadInput, CreateThreadOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in CreateThreadInput) (*mcp.CallToolResult, CreateThreadOutput, error) {
 		actor, ok := auth.ActorFromContext(ctx)
 		if !ok {
@@ -34,7 +35,7 @@ func createThreadHandler(db *gorm.DB, server *mcp.Server) mcp.ToolHandlerFor[Cre
 			return nil, CreateThreadOutput{}, err
 		}
 
-		notifyCreateThreadTargets(ctx, server, db, thread.ID)
+		notifyCreateThreadTargets(ctx, server, db, hub, thread.ID)
 
 		return nil, CreateThreadOutput{ThreadID: thread.ID, Mentions: thread.MentionReport}, nil
 	}
@@ -43,7 +44,7 @@ func createThreadHandler(db *gorm.DB, server *mcp.Server) mcp.ToolHandlerFor[Cre
 // notifyCreateThreadTargets pushes a resources/updated notification to
 // every actor mentioned in threadID's opening post. Best-effort, for the
 // same reason as notifyReplyTargets in tool_reply.go.
-func notifyCreateThreadTargets(ctx context.Context, server *mcp.Server, db *gorm.DB, threadID string) {
+func notifyCreateThreadTargets(ctx context.Context, server *mcp.Server, db *gorm.DB, hub *activity.Hub, threadID string) {
 	mentionedIDs, err := storage.MentionedActorIDsForThread(db, threadID)
 	if err != nil {
 		return
@@ -51,4 +52,5 @@ func notifyCreateThreadTargets(ctx context.Context, server *mcp.Server, db *gorm
 	for _, id := range mentionedIDs {
 		server.ResourceUpdated(ctx, &mcp.ResourceUpdatedNotificationParams{URI: catchUpResourceURI(id)})
 	}
+	hub.Notify(mentionedIDs...)
 }

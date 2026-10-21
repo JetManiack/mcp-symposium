@@ -1,6 +1,11 @@
 package storage
 
-import "gorm.io/gorm"
+import (
+	"errors"
+	"time"
+
+	"gorm.io/gorm"
+)
 
 // CatchUpSummary is a non-destructive count of what CatchUp would return
 // for an actor — used to back a read-only resource so a client peeking at
@@ -38,6 +43,47 @@ func GetCatchUpSummary(db *gorm.DB, actorID string) (*CatchUpSummary, error) {
 	summary.UnseenMentionCount = int(mentionCount)
 
 	return summary, nil
+}
+
+// LatestActivityAt returns the created_at of the newest unread reply or
+// unseen mention for actorID, or nil when there is nothing new. Like
+// GetCatchUpSummary it reads without marking anything.
+func LatestActivityAt(db *gorm.DB, actorID string) (*time.Time, error) {
+	var latest *time.Time
+
+	var watches []ThreadWatch
+	if err := db.Where("actor_id = ?", actorID).Find(&watches).Error; err != nil {
+		return nil, err
+	}
+	for _, w := range watches {
+		var reply Reply
+		err := db.Where("thread_id = ? AND created_at > ?", w.ThreadID, w.LastReadAt).
+			Order("created_at desc").First(&reply).Error
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if latest == nil || reply.CreatedAt.After(*latest) {
+			t := reply.CreatedAt
+			latest = &t
+		}
+	}
+
+	var mention Mention
+	err := db.Where("mentioned_actor_id = ? AND seen_at IS NULL", actorID).
+		Order("created_at desc").First(&mention).Error
+	if err == nil {
+		if latest == nil || mention.CreatedAt.After(*latest) {
+			t := mention.CreatedAt
+			latest = &t
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	return latest, nil
 }
 
 // WatchersOf returns every actor ID currently watching threadID.

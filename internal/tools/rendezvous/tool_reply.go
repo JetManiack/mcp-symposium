@@ -7,6 +7,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"gorm.io/gorm"
 
+	"mcp-symposium/internal/activity"
 	"mcp-symposium/internal/auth"
 	"mcp-symposium/internal/storage"
 )
@@ -22,7 +23,7 @@ type ReplyOutput struct {
 	Mentions storage.MentionReport `json:"mentions"`
 }
 
-func replyHandler(db *gorm.DB, server *mcp.Server) mcp.ToolHandlerFor[ReplyInput, ReplyOutput] {
+func replyHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp.ToolHandlerFor[ReplyInput, ReplyOutput] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in ReplyInput) (*mcp.CallToolResult, ReplyOutput, error) {
 		actor, ok := auth.ActorFromContext(ctx)
 		if !ok {
@@ -34,7 +35,7 @@ func replyHandler(db *gorm.DB, server *mcp.Server) mcp.ToolHandlerFor[ReplyInput
 			return nil, ReplyOutput{}, err
 		}
 
-		notifyReplyTargets(ctx, server, db, in.ThreadID, reply.ID, actor.ID)
+		notifyReplyTargets(ctx, server, db, hub, in.ThreadID, reply.ID, actor.ID)
 
 		return nil, ReplyOutput{ReplyID: reply.ID, Mentions: reply.MentionReport}, nil
 	}
@@ -45,7 +46,7 @@ func replyHandler(db *gorm.DB, server *mcp.Server) mcp.ToolHandlerFor[ReplyInput
 // mentioned in replyID's body. Best-effort: a lookup or notification
 // failure here must never fail the reply itself, since the reply already
 // committed successfully.
-func notifyReplyTargets(ctx context.Context, server *mcp.Server, db *gorm.DB, threadID, replyID, replierID string) {
+func notifyReplyTargets(ctx context.Context, server *mcp.Server, db *gorm.DB, hub *activity.Hub, threadID, replyID, replierID string) {
 	notify := map[string]bool{}
 
 	if watcherIDs, err := storage.WatchersOf(db, threadID); err == nil {
@@ -61,7 +62,10 @@ func notifyReplyTargets(ctx context.Context, server *mcp.Server, db *gorm.DB, th
 		}
 	}
 
+	ids := make([]string, 0, len(notify))
 	for id := range notify {
 		server.ResourceUpdated(ctx, &mcp.ResourceUpdatedNotificationParams{URI: catchUpResourceURI(id)})
+		ids = append(ids, id)
 	}
+	hub.Notify(ids...)
 }

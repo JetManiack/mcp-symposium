@@ -35,5 +35,17 @@ func openSQLite(dsn string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("set journal_mode: %w", err)
 	}
 
+	// One pooled connection, for two reasons the pragmas alone don't cover:
+	// db.Exec applies them to a single pooled connection, so any later
+	// connection would miss them; and two writers on separate connections
+	// can still hit SQLITE_BUSY_SNAPSHOT (517), which busy_timeout does not
+	// wait out (seen live: the async audit writer racing a tool call).
+	// SQLite serializes writers anyway, so one connection costs little.
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, fmt.Errorf("get sql.DB: %w", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
 	return db, nil
 }
