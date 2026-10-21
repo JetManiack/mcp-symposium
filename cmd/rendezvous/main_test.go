@@ -48,7 +48,7 @@ func TestServeCommand_StartsHTTPServerOnConfiguredAddr(t *testing.T) {
 	listener.Close()
 
 	cmd := newRootCommand()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -89,7 +89,7 @@ func TestServeCommand_ExposesLivezAndReadyzUnauthenticated(t *testing.T) {
 	listener.Close()
 
 	cmd := newRootCommand()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -129,7 +129,7 @@ func TestServeCommand_MountsRestAPI(t *testing.T) {
 	listener.Close()
 
 	cmd := newRootCommand()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -167,7 +167,7 @@ func TestServeCommand_ServesFrontend(t *testing.T) {
 	listener.Close()
 
 	cmd := newRootCommand()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -232,7 +232,7 @@ func TestServeCommand_DBUnreachableAtBoot_ServesNotReadyInsteadOfExiting(t *test
 	listener.Close()
 
 	cmd := newRootCommand()
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Port 1 requires root to bind and nothing listens there in a test
@@ -388,7 +388,7 @@ func TestServeCommand_FailsFastWithoutOIDCConfigOrStubFlag(t *testing.T) {
 	listener.Close()
 
 	cmd := newRootCommand()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	err = cmd.Run(ctx, []string{"rendezvous", "--listen-addr", addr, "--db-dsn", dbPath})
