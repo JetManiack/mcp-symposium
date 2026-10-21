@@ -81,8 +81,8 @@ func readPassphrase(prompt string, confirm bool) ([]byte, error) {
 			return nil, errors.New("passphrases do not match")
 		}
 	}
-	if len(pass) < 8 {
-		return nil, errors.New("passphrase must be at least 8 characters")
+	if len(pass) < 16 {
+		return nil, errors.New("passphrase must be at least 16 characters — the key file is offline-attackable, so use a long phrase (e.g. diceware)")
 	}
 	return pass, nil
 }
