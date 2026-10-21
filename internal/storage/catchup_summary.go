@@ -63,7 +63,9 @@ func MentionedActorIDsForReply(db *gorm.DB, replyID string) ([]string, error) {
 // opening post body.
 func MentionedActorIDsForThread(db *gorm.DB, threadID string) ([]string, error) {
 	var ids []string
-	if err := db.Model(&Mention{}).Where("thread_id = ?", threadID).Pluck("mentioned_actor_id", &ids).Error; err != nil {
+	// reply_id IS NULL: reply mentions carry thread_id too, and this must
+	// return only the opening post's mentions.
+	if err := db.Model(&Mention{}).Where("thread_id = ? AND reply_id IS NULL", threadID).Pluck("mentioned_actor_id", &ids).Error; err != nil {
 		return nil, err
 	}
 	return ids, nil

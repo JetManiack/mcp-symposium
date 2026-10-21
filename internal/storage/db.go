@@ -44,6 +44,13 @@ func Open(dsn string) (*gorm.DB, error) {
 			return fmt.Errorf("automigrate: %w", err)
 		}
 
+		// Reply mentions created before thread_id was set on them carry only
+		// reply_id, which forces recipients to search for the thread. Fill
+		// thread_id in from the reply row once.
+		if err := backfillMentionThreadIDs(db); err != nil {
+			return fmt.Errorf("backfill mention thread ids: %w", err)
+		}
+
 		if db.Dialector.Name() == "postgres" {
 			return setupSearchPostgres(db)
 		}
@@ -63,4 +70,13 @@ func Open(dsn string) (*gorm.DB, error) {
 	}
 
 	return db, nil
+}
+
+// backfillMentionThreadIDs sets thread_id on reply mentions that predate
+// mentions carrying both ids. Idempotent: it only touches rows where
+// thread_id is still NULL.
+func backfillMentionThreadIDs(db *gorm.DB) error {
+	return db.Exec(`UPDATE mentions SET thread_id = (
+		SELECT replies.thread_id FROM replies WHERE replies.id = mentions.reply_id
+	) WHERE mentions.thread_id IS NULL AND mentions.reply_id IS NOT NULL`).Error
 }

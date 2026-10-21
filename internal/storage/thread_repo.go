@@ -158,7 +158,9 @@ func AddReply(db *gorm.DB, threadID, authorID, body string, extraWatcherIDs []st
 			}
 		}
 
-		report, err := createMentions(tx, &reply.ID, nil, authorID, body)
+		// Pass the thread ID too: a mention must always carry thread_id, or
+		// recipients of a reply mention can't resolve it without a search.
+		report, err := createMentions(tx, &reply.ID, &threadID, authorID, body)
 		reply.MentionReport = report
 		return err
 	})

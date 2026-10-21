@@ -7,3 +7,4 @@ data
 bin
 vendor
 internal/frontend/static/js
+web/node_modules

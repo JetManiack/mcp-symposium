@@ -2,10 +2,13 @@
 
 # Build stage runs natively on the build host and cross-compiles to the target
 # platform. glebarez/sqlite is pure Go (no CGO), so this is a plain cross-compile.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
-RUN apk add --no-cache esbuild make curl openssl bash
+FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS builder
+# nodejs/npm: go:generate bundles web/src with esbuild, which resolves
+# react/react-dom imports from web/node_modules — `npm ci` below installs them.
+RUN apk add --no-cache esbuild make curl openssl bash nodejs npm
 WORKDIR /src
 COPY . .
+RUN npm ci --prefix web
 # `make generate` (not `go generate` directly) — it also runs
 # vendor-frontend-js, which downloads and checksum-verifies
 # React/react-dom/marked/DOMPurify into internal/frontend/static/js/vendor/

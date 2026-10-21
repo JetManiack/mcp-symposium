@@ -132,8 +132,8 @@ func TestFS_ServesGeneratedBundle(t *testing.T) {
 	if len(data) == 0 {
 		t.Error("js/app.bundle.js is empty")
 	}
-	if !strings.Contains(string(data), "/api/agents") {
-		t.Error("app.bundle.js does not reference /api/agents — Agents.jsx was likely not actually bundled (check that index.jsx imports it)")
+	if !strings.Contains(string(data), "/api/actors") {
+		t.Error("app.bundle.js does not reference /api/actors — Agents.jsx was likely not actually bundled (check that index.jsx imports it)")
 	}
 }
 
@@ -225,8 +225,8 @@ func TestFS_BundleIncludesClickableTagFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadAll() error = %v", err)
 	}
-	if !strings.Contains(string(data), "#/threads?tags=") {
-		t.Error("app.bundle.js does not reference \"#/threads?tags=\" — ThreadDetail.jsx's clickable tag chips are missing from the bundle")
+	if !strings.Contains(string(data), "/threads?tags=") {
+		t.Error("app.bundle.js does not reference \"/threads?tags=\" — ThreadDetail.jsx's clickable tag chips are missing from the bundle")
 	}
 	if !strings.Contains(string(data), "Filtered by tag") {
 		t.Error("app.bundle.js does not reference \"Filtered by tag\" — ThreadList.jsx's active-tag-filter indicator is missing from the bundle")
