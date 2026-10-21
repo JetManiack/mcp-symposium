@@ -36,6 +36,7 @@ import (
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/nacl/box"
+	"golang.org/x/term"
 
 	"mcp-symposium/internal/secrethandoff"
 )
@@ -135,6 +136,14 @@ func runOperator(args []string) error {
 			// Vault mode: nothing touches disk. The private key is printed
 			// once (base64) for the operator to store in a password manager
 			// (KeePassXC etc.); signing later reads it back via --key -.
+			//
+			// Only onto a real terminal: with stdout piped or redirected the
+			// key would land in whatever is capturing it (a file, an agent
+			// harness, a transcript). A pty still fools this check — the
+			// boundary remains that only the operator sees the terminal.
+			if !term.IsTerminal(int(os.Stdout.Fd())) {
+				return fmt.Errorf("--stdout prints the PRIVATE key and requires an interactive terminal; stdout is piped or redirected — refusing")
+			}
 			fmt.Printf("operator public key (embed in each agent's pinned config):\n%s\n",
 				base64.StdEncoding.EncodeToString(pub))
 			fmt.Printf("operator PRIVATE key — store it in your password manager NOW, it is shown exactly once and saved nowhere:\n%s\n",
