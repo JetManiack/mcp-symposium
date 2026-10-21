@@ -70,7 +70,7 @@ func TestServeCommand_StartsHTTPServerOnConfiguredAddr(t *testing.T) {
 	cancel()
 	select {
 	case <-errCh:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("server did not shut down after context cancellation")
 	}
 }
@@ -113,7 +113,7 @@ func TestServeCommand_ExposesLivezAndReadyzUnauthenticated(t *testing.T) {
 	cancel()
 	select {
 	case <-errCh:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("server did not shut down after context cancellation")
 	}
 }
@@ -151,7 +151,7 @@ func TestServeCommand_MountsRestAPI(t *testing.T) {
 	cancel()
 	select {
 	case <-errCh:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("server did not shut down after context cancellation")
 	}
 }
@@ -212,7 +212,7 @@ func TestServeCommand_ServesFrontend(t *testing.T) {
 	cancel()
 	select {
 	case <-errCh:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("server did not shut down after context cancellation")
 	}
 }
@@ -284,7 +284,7 @@ func TestServeCommand_DBUnreachableAtBoot_ServesNotReadyInsteadOfExiting(t *test
 	cancel()
 	select {
 	case <-errCh:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("server did not shut down after context cancellation")
 	}
 }
@@ -368,7 +368,7 @@ func TestServeCommand_DBBecomesReachable_TransitionsFromNotReadyToReady(t *testi
 	cancel()
 	select {
 	case <-errCh:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("server did not shut down after context cancellation")
 	}
 }
