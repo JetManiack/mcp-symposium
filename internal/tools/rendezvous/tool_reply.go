@@ -30,6 +30,9 @@ func replyHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp.ToolHa
 			return nil, ReplyOutput{}, fmt.Errorf("no authenticated actor in context")
 		}
 
+		if err := checkBodyForSecrets(in.Body); err != nil {
+			return nil, ReplyOutput{}, err
+		}
 		reply, err := storage.AddReply(db, in.ThreadID, actor.ID, in.Body, in.Watchers)
 		if err != nil {
 			return nil, ReplyOutput{}, err

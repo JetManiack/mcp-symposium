@@ -110,6 +110,30 @@ func (r *Registrar) Register(srv *mcp.Server, db *gorm.DB) {
 		Name:        "list_profiles",
 		Description: "List every actor (agent or human) with their profile, if set, so you know who to @mention",
 	}, recorded(db, "list_profiles", listProfilesHandler(db)))
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "set_key_bundle",
+		Description: "Publish the caller's operator-signed key bundle for encrypted secret handoff (use the board-secret CLI to create one; the server stores it opaquely)",
+	}, recorded(db, "set_key_bundle", setKeyBundleHandler(db)))
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "get_key_bundle",
+		Description: "Fetch an actor's operator-signed key bundle; verify its operator signature client-side before encrypting to it",
+	}, recorded(db, "get_key_bundle", getKeyBundleHandler(db)))
+
+	// The handoff tools are audited metadata-only: recorded() would persist
+	// the envelope ciphertext in tool_calls forever, defeating the one-time
+	// + TTL guarantee the blobs get in their own table (deleted on fetch,
+	// excluded from FTS). The SecretHandoff metadata row is the audit trail.
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "send_secret",
+		Description: "Store a sealed+signed secret envelope for one recipient (built with the board-secret CLI — never a plaintext credential); one-time fetch, TTL <= 1h",
+	}, recordedMetaOnly(db, "send_secret", sendSecretHandler(db, r.hub)))
+
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "fetch_secret",
+		Description: "Release a secret envelope to its recipient exactly once (decrypt with the board-secret CLI, never in the model context); foreign or repeat fetches alarm the sender and operator",
+	}, recordedMetaOnly(db, "fetch_secret", fetchSecretHandler(db, r.hub)))
 }
 
 // recorded wraps a typed tool handler with audit-record persistence. It
@@ -153,6 +177,40 @@ func recorded[In, Out any](db *gorm.DB, tool string,
 				OutputJSON: preview,
 				OutputSize: outSize,
 				Truncated:  truncated,
+				IsError:    isError,
+				DurationMS: time.Since(start).Milliseconds(),
+				CalledAt:   start,
+			}).Error; dbErr != nil {
+				slog.Warn("failed to record tool call", "tool", tool, "error", fmt.Sprintf("%v", dbErr))
+			}
+		}()
+		return result, out, err
+	}
+}
+
+// recordedMetaOnly audits a tool call without persisting its input or
+// output — for the secret-handoff tools, whose payloads are ciphertext
+// envelopes that must not outlive their one-time fetch in any table.
+// The ToolCall row still records who called what, when, how long it took
+// and whether it errored; the handoff's own metadata row carries the rest.
+func recordedMetaOnly[In, Out any](db *gorm.DB, tool string,
+	h mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (
+		*mcp.CallToolResult, Out, error) {
+		start := time.Now()
+		result, out, err := h(ctx, req, in)
+		go func() {
+			actorID := ""
+			if actor, ok := auth.ActorFromContext(ctx); ok {
+				actorID = actor.ID
+			}
+			isError := err != nil || (result != nil && result.IsError)
+			if dbErr := db.WithContext(context.Background()).Create(&storage.ToolCall{
+				ID:         uuid.NewString(),
+				ActorID:    actorID,
+				Tool:       tool,
+				InputJSON:  `"<redacted: secret handoff>"`,
+				OutputJSON: `"<redacted: secret handoff>"`,
 				IsError:    isError,
 				DurationMS: time.Since(start).Milliseconds(),
 				CalledAt:   start,

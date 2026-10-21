@@ -30,6 +30,9 @@ func createThreadHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp
 			return nil, CreateThreadOutput{}, fmt.Errorf("no authenticated actor in context")
 		}
 
+		if err := checkBodyForSecrets(in.Title + "\n" + in.Body); err != nil {
+			return nil, CreateThreadOutput{}, err
+		}
 		thread, err := storage.CreateThread(db, actor.ID, in.Title, in.Body, in.Tags)
 		if err != nil {
 			return nil, CreateThreadOutput{}, err

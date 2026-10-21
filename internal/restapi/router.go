@@ -53,6 +53,14 @@ func NewHandler(db *gorm.DB, provider humanauth.Provider) http.Handler {
 	})
 	r.With(humanauth.RequireAdmin).Delete("/credentials/{id}", revokeTokenHandler(db))
 
+	// Secret-handoff operator feed and admin-class approval (admin only;
+	// metadata only — envelopes never leave their table through REST)
+	r.Route("/secret-handoffs", func(r chi.Router) {
+		r.Use(humanauth.RequireAdmin)
+		r.Get("/", listSecretHandoffsHandler(db))
+		r.Post("/{id}/approve", approveSecretHandoffHandler(db))
+	})
+
 	// Tool-call audit log (admin only)
 	r.Route("/tool-calls", func(r chi.Router) {
 		r.Use(humanauth.RequireAdmin)

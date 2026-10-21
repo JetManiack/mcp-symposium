@@ -40,6 +40,8 @@ func Open(dsn string) (*gorm.DB, error) {
 			&UserIdentity{},
 			&Session{},
 			&ToolCall{},
+			&KeyBundleRecord{},
+			&SecretHandoff{},
 		); err != nil {
 			return fmt.Errorf("automigrate: %w", err)
 		}
