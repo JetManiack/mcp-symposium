@@ -130,14 +130,25 @@ func runOperator(args []string) error {
 		if err != nil {
 			return err
 		}
+		// The private half is passphrase-encrypted before it touches disk:
+		// on a machine that also runs an agent under the same uid, a
+		// plaintext key would reduce "operator-signed" to "agent-signed".
+		pass, err := readPassphrase("passphrase for the operator key: ", true)
+		if err != nil {
+			return err
+		}
+		enc, err := sealOperatorKey(pub, priv, pass)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(out), 0o700); err != nil {
 			return err
 		}
-		blob, _ := json.Marshal(map[string][]byte{"pub": pub, "priv": priv})
+		blob, _ := json.MarshalIndent(enc, "", "  ")
 		if err := os.WriteFile(out, blob, 0o600); err != nil {
 			return err
 		}
-		fmt.Printf("operator key written to %s (keep it off every agent host)\n", out)
+		fmt.Printf("operator key written to %s (passphrase-encrypted; run keygen/sign only on your own machine, never on an agent host)\n", out)
 		fmt.Printf("operator public key (embed in each agent's pinned config):\n%s\n",
 			base64.StdEncoding.EncodeToString(pub))
 		return nil
@@ -149,12 +160,12 @@ func runOperator(args []string) error {
 		if bundlePath == "" {
 			return fmt.Errorf("usage: board-secret operator sign [--key file] <bundle.json>")
 		}
-		kb, err := os.ReadFile(keyPath)
+		pass, err := readPassphrase("operator key passphrase: ", false)
 		if err != nil {
 			return err
 		}
-		var keys map[string][]byte
-		if err := json.Unmarshal(kb, &keys); err != nil {
+		_, priv, err := openOperatorKey(keyPath, pass)
+		if err != nil {
 			return err
 		}
 		data, err := os.ReadFile(bundlePath)
@@ -165,7 +176,7 @@ func runOperator(args []string) error {
 		if err := json.Unmarshal(data, &bundle); err != nil {
 			return err
 		}
-		bundle.OperatorSig = ed25519.Sign(ed25519.PrivateKey(keys["priv"]), secrethandoff.CanonicalBundleBytes(&bundle))
+		bundle.OperatorSig = ed25519.Sign(priv, secrethandoff.CanonicalBundleBytes(&bundle))
 		signed, _ := json.MarshalIndent(&bundle, "", "  ")
 		if err := os.WriteFile(bundlePath, signed, 0o600); err != nil {
 			return err

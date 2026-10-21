@@ -225,3 +225,44 @@ func runWithStdin(t *testing.T, input string, args ...string) error {
 	}()
 	return run(args)
 }
+
+// TestOperatorKeyEncryptionRoundTrip pins the trust-root protection: the
+// private half on disk is passphrase-encrypted, a wrong passphrase fails,
+// and the legacy plaintext format is refused outright.
+func TestOperatorKeyEncryptionRoundTrip(t *testing.T) {
+	home := testHome(t)
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+
+	enc, err := sealOperatorKey(pub, priv, []byte("correct horse"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, _ := json.Marshal(enc)
+	path := filepath.Join(home, "operator.key")
+	if err := os.WriteFile(path, blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	gotPub, gotPriv, err := openOperatorKey(path, []byte("correct horse"))
+	if err != nil {
+		t.Fatalf("open with right passphrase: %v", err)
+	}
+	if !gotPub.Equal(pub) || !gotPriv.Equal(priv) {
+		t.Fatal("keys did not round-trip")
+	}
+
+	if _, _, err := openOperatorKey(path, []byte("wrong")); err == nil {
+		t.Fatal("opened with the wrong passphrase")
+	}
+
+	// Legacy plaintext format must be refused, not silently used.
+	legacy, _ := json.Marshal(map[string][]byte{"pub": pub, "priv": priv})
+	legacyPath := filepath.Join(home, "legacy.key")
+	if err := os.WriteFile(legacyPath, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = openOperatorKey(legacyPath, []byte("whatever"))
+	if err == nil || !strings.Contains(err.Error(), "UNENCRYPTED") {
+		t.Fatalf("legacy key err = %v, want the unencrypted-format refusal", err)
+	}
+}
