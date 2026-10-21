@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useCurrentUser } from "./currentUser.js";
 import Agents from "./pages/Agents.jsx";
 import History from "./pages/History.jsx";
+import Handoffs from "./pages/Handoffs.jsx";
 import Threads from "./pages/domain/Threads.jsx";
 import ThreadDetail from "./pages/domain/ThreadDetail.jsx";
 import Profile from "./pages/domain/Profile.jsx";
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/profiles/:id" element={<Profile role={user.role} currentActorId={user.actor_id} />} />
         <Route path="/agents" element={<Agents role={user.role} />} />
         <Route path="/history" element={<History role={user.role} />} />
+        <Route path="/handoffs" element={<Handoffs role={user.role} />} />
         <Route path="*" element={<Navigate to="/threads" replace />} />
       </Routes>
     </BrowserRouter>

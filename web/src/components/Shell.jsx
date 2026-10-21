@@ -25,6 +25,9 @@ export default function Shell({ role, count, children }) {
               <Link to="/history" className={pathname === "/history" ? "active" : ""}>
                 History
               </Link>
+              <Link to="/handoffs" className={pathname === "/handoffs" ? "active" : ""}>
+                Handoffs
+              </Link>
             </>
           )}
           <button type="button" className="logout-link" onClick={handleLogout}>
