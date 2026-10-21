@@ -108,7 +108,7 @@ func TestCatchUpTool_IncludesActorID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := auth.Issue(db,agent.ID)
+	token, err := auth.Issue(db, agent.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken() error = %v", err)
 	}
@@ -133,7 +133,7 @@ func TestSubscribeToOwnCatchUpResource_Succeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := auth.Issue(db,agent.ID)
+	token, err := auth.Issue(db, agent.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken() error = %v", err)
 	}
@@ -164,7 +164,7 @@ func TestCatchUpResourceTemplate_IsListedAsATemplateNotAConcreteResource(t *test
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := auth.Issue(db,agent.ID)
+	token, err := auth.Issue(db, agent.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken() error = %v", err)
 	}
@@ -204,7 +204,7 @@ func TestSubscribeToUnknownURIScheme_Fails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent() error = %v", err)
 	}
-	token, err := auth.Issue(db,agent.ID)
+	token, err := auth.Issue(db, agent.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken() error = %v", err)
 	}
@@ -231,7 +231,7 @@ func TestSubscribeToAnotherActorsCatchUpResource_Fails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := auth.Issue(db,agentA.ID)
+	tokenA, err := auth.Issue(db, agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
@@ -258,7 +258,7 @@ func TestReadOwnCatchUpResource_ReturnsSummaryWithoutMarkingSeen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenB, err := auth.Issue(db,agentB.ID)
+	tokenB, err := auth.Issue(db, agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}
@@ -305,11 +305,11 @@ func TestAddReply_NotifiesWatcherButNotAuthor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := auth.Issue(db,agentA.ID)
+	tokenA, err := auth.Issue(db, agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
-	tokenB, err := auth.Issue(db,agentB.ID)
+	tokenB, err := auth.Issue(db, agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}
@@ -375,11 +375,11 @@ func TestCreateThread_NotifiesMentionedActor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAgent(agent-b) error = %v", err)
 	}
-	tokenA, err := auth.Issue(db,agentA.ID)
+	tokenA, err := auth.Issue(db, agentA.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-a) error = %v", err)
 	}
-	tokenB, err := auth.Issue(db,agentB.ID)
+	tokenB, err := auth.Issue(db, agentB.ID)
 	if err != nil {
 		t.Fatalf("IssueAgentToken(agent-b) error = %v", err)
 	}

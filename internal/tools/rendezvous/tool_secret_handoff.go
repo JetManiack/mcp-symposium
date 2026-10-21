@@ -2,9 +2,12 @@ package rendezvous
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -118,12 +121,35 @@ func sendSecretHandler(db *gorm.DB, hub *activity.Hub) mcp.ToolHandlerFor[SendSe
 		if h.V != 1 {
 			return nil, SendSecretOutput{}, fmt.Errorf("unsupported envelope version %d", h.V)
 		}
-		ttl := time.Duration(h.TTLSeconds) * time.Second
-		if ttl <= 0 || ttl > secrethandoff.MaxTTL {
+		// TTLSeconds is range-checked BEFORE the duration multiply: a huge
+		// value would overflow time.Duration and could slip past the cap.
+		if h.TTLSeconds <= 0 || h.TTLSeconds > int(secrethandoff.MaxTTL.Seconds()) {
 			return nil, SendSecretOutput{}, fmt.Errorf("ttl_s must be in (0, %d]", int(secrethandoff.MaxTTL.Seconds()))
 		}
+		ttl := time.Duration(h.TTLSeconds) * time.Second
 		if h.Class != secrethandoff.ClassRoutine && h.Class != secrethandoff.ClassAdmin {
 			return nil, SendSecretOutput{}, fmt.Errorf("class must be routine or admin")
+		}
+		// The id must be a UUID: it lands in a char(36) column, in clients'
+		// line-based seen-lists (so no newlines), and in operator-facing
+		// output. An empty id would also desync from the signed header.
+		if _, err := uuid.Parse(h.SecretID); err != nil {
+			return nil, SendSecretOutput{}, fmt.Errorf("header secret_id must be a UUID (the CLI generates one): %v", err)
+		}
+		if len(h.Label) == 0 || len(h.Label) > 128 {
+			return nil, SendSecretOutput{}, fmt.Errorf("label must be 1..128 characters")
+		}
+		for _, r := range h.Label {
+			if r < 0x20 || r == 0x7f {
+				return nil, SendSecretOutput{}, fmt.Errorf("label must not contain control characters")
+			}
+		}
+		// The ciphertext must match the signed header's hash: the server
+		// can't verify the signature (crypto-blind), but it can refuse a
+		// blob that visibly isn't what the header commits to.
+		sum := sha256.Sum256(env.Ciphertext)
+		if hex.EncodeToString(sum[:]) != h.CiphertextSHA256 {
+			return nil, SendSecretOutput{}, fmt.Errorf("ciphertext does not match the signed header's sha256")
 		}
 
 		// The envelope's From must be the calling actor: the metadata row,
@@ -150,9 +176,6 @@ func sendSecretHandler(db *gorm.DB, hub *activity.Hub) mcp.ToolHandlerFor[SendSe
 		_ = storage.SweepExpiredSecrets(db, time.Now())
 
 		id := h.SecretID
-		if id == "" {
-			id = uuid.NewString()
-		}
 		now := time.Now()
 		rec := &storage.SecretHandoff{
 			ID:           id,
@@ -192,24 +215,36 @@ func fetchSecretHandler(db *gorm.DB, hub *activity.Hub) mcp.ToolHandlerFor[Fetch
 			return nil, FetchSecretOutput{}, fmt.Errorf("no authenticated actor in context")
 		}
 
+		// Housekeeping on the read path too: expired blobs must not wait for
+		// the next send to be blanked.
+		_ = storage.SweepExpiredSecrets(db, time.Now())
+
 		rec, envelope, err := storage.FetchSecretHandoff(db, in.SecretID, actor.ID, time.Now())
 		switch {
 		case err == nil:
 			return nil, FetchSecretOutput{SecretID: in.SecretID, EnvelopeJSON: envelope}, nil
 		case errors.Is(err, storage.ErrSecretForeignFetch):
 			// Theft marker: someone who isn't the recipient asked for the
-			// blob. Wake the sender so their session sees it; the metadata
-			// row (foreign_attempts) is the operator's audit trail.
+			// blob. The alert ROW is the delivery (catch_up/peek surface it);
+			// the hub nudge just wakes a live wait_for_activity to collect it.
 			if rec != nil {
+				if aerr := storage.CreateHandoffAlert(db, uuid.NewString(), rec.FromActorID,
+					in.SecretID, "foreign_fetch", actor.ID); aerr != nil {
+					slog.Error("failed to record foreign-fetch alert", "secret_id", in.SecretID, "error", aerr)
+				}
 				hub.Notify(rec.FromActorID)
 			}
-			return nil, FetchSecretOutput{}, fmt.Errorf("secret %q is not addressed to you; the sender and operator have been notified", in.SecretID)
+			return nil, FetchSecretOutput{}, fmt.Errorf("secret %q is not addressed to you; the sender has been alerted and the attempt is on the operator's audit feed", in.SecretID)
 		case errors.Is(err, storage.ErrSecretAlreadyFetched):
 			when, who := "", ""
 			if rec != nil && rec.FetchedAt != nil {
 				when, who = rec.FetchedAt.UTC().Format(time.RFC3339), rec.FetchedByActor
 			}
 			if rec != nil {
+				if aerr := storage.CreateHandoffAlert(db, uuid.NewString(), rec.FromActorID,
+					in.SecretID, "double_fetch", actor.ID); aerr != nil {
+					slog.Error("failed to record double-fetch alert", "secret_id", in.SecretID, "error", aerr)
+				}
 				hub.Notify(rec.FromActorID)
 			}
 			return nil, FetchSecretOutput{}, fmt.Errorf(

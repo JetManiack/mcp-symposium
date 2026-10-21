@@ -114,7 +114,7 @@ func TestFetchSecretHandoff_TTLAndAdminGate(t *testing.T) {
 		t.Fatalf("unapproved admin fetch err = %v, want ErrSecretNeedsApproval", err)
 	}
 
-	if err := storage.ApproveSecretHandoff(db, "sid-admin", now); err != nil {
+	if err := storage.ApproveSecretHandoff(db, "sid-admin", "test-operator", now); err != nil {
 		t.Fatalf("approve: %v", err)
 	}
 	if _, _, err := storage.FetchSecretHandoff(db, "sid-admin", recipient.ID, now); err != nil {

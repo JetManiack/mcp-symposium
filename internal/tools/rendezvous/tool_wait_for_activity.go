@@ -73,7 +73,7 @@ func waitForActivityHandler(db *gorm.DB, hub *activity.Hub) mcp.ToolHandlerFor[W
 			if err != nil {
 				return nil, err
 			}
-			if summary.UnreadReplyCount == 0 && summary.UnseenMentionCount == 0 {
+			if summary.UnreadReplyCount == 0 && summary.UnseenMentionCount == 0 && summary.UnseenHandoffAlertCount == 0 {
 				return nil, nil
 			}
 			maxAt, err := storage.LatestActivityAt(db, actor.ID)

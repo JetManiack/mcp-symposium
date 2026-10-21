@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"mcp-symposium/internal/storage"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"mcp-symposium/internal/storage"
 )
 
 // openTestPostgresDB creates a uniquely-named schema on the Postgres

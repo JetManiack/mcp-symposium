@@ -42,6 +42,7 @@ func Open(dsn string) (*gorm.DB, error) {
 			&ToolCall{},
 			&KeyBundleRecord{},
 			&SecretHandoff{},
+			&HandoffAlert{},
 		); err != nil {
 			return fmt.Errorf("automigrate: %w", err)
 		}

@@ -15,10 +15,11 @@ import (
 type PeekInput struct{}
 
 type PeekOutput struct {
-	ActorID            string     `json:"actor_id"`
-	UnreadReplyCount   int        `json:"unread_reply_count"`
-	UnseenMentionCount int        `json:"unseen_mention_count"`
-	MaxCreatedAt       *time.Time `json:"max_created_at,omitempty"`
+	ActorID                 string     `json:"actor_id"`
+	UnreadReplyCount        int        `json:"unread_reply_count"`
+	UnseenMentionCount      int        `json:"unseen_mention_count"`
+	UnseenHandoffAlertCount int        `json:"unseen_handoff_alert_count"`
+	MaxCreatedAt            *time.Time `json:"max_created_at,omitempty"`
 }
 
 // peekHandler is the non-destructive counterpart of catch_up: the same
@@ -41,10 +42,11 @@ func peekHandler(db *gorm.DB) mcp.ToolHandlerFor[PeekInput, PeekOutput] {
 		}
 
 		return nil, PeekOutput{
-			ActorID:            actor.ID,
-			UnreadReplyCount:   summary.UnreadReplyCount,
-			UnseenMentionCount: summary.UnseenMentionCount,
-			MaxCreatedAt:       maxAt,
+			ActorID:                 actor.ID,
+			UnreadReplyCount:        summary.UnreadReplyCount,
+			UnseenMentionCount:      summary.UnseenMentionCount,
+			UnseenHandoffAlertCount: summary.UnseenHandoffAlertCount,
+			MaxCreatedAt:            maxAt,
 		}, nil
 	}
 }

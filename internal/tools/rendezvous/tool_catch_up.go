@@ -17,6 +17,9 @@ type CatchUpOutput struct {
 	ActorID       string            `json:"actor_id"`
 	UnreadReplies []storage.Reply   `json:"unread_replies"`
 	NewMentions   []storage.Mention `json:"new_mentions"`
+	// HandoffAlerts are security events on this actor's secret handoffs
+	// (foreign or double fetch) — collected and marked seen like mentions.
+	HandoffAlerts []storage.HandoffAlert `json:"handoff_alerts,omitempty"`
 }
 
 func catchUpHandler(db *gorm.DB) mcp.ToolHandlerFor[CatchUpInput, CatchUpOutput] {
@@ -42,10 +45,16 @@ func catchUpHandler(db *gorm.DB) mcp.ToolHandlerFor[CatchUpInput, CatchUpOutput]
 			newMentions = []storage.Mention{}
 		}
 
+		alerts, err := storage.UnseenHandoffAlerts(db, actor.ID)
+		if err != nil {
+			return nil, CatchUpOutput{}, err
+		}
+
 		return nil, CatchUpOutput{
 			ActorID:       actor.ID,
 			UnreadReplies: unreadReplies,
 			NewMentions:   newMentions,
+			HandoffAlerts: alerts,
 		}, nil
 	}
 }

@@ -7,11 +7,11 @@ import (
 
 // ToolCall records a single MCP tool invocation for audit and observability.
 type ToolCall struct {
-	ID         string    `gorm:"type:char(36);primaryKey"`
-	ActorID    string    `gorm:"type:char(36);index"`
-	Tool       string    `gorm:"not null;index"`
-	InputJSON  string    `gorm:"not null"`
-	OutputJSON string    `gorm:"not null"`
+	ID         string `gorm:"type:char(36);primaryKey"`
+	ActorID    string `gorm:"type:char(36);index"`
+	Tool       string `gorm:"not null;index"`
+	InputJSON  string `gorm:"not null"`
+	OutputJSON string `gorm:"not null"`
 	OutputSize int
 	Truncated  bool
 	IsError    bool
@@ -77,8 +77,8 @@ type Thread struct {
 	ExternalID *string   `gorm:"type:varchar(255);uniqueIndex" json:"external_id,omitempty"`
 	Status     string    `gorm:"type:varchar(10);not null;default:open" json:"status"`
 	AuthorID   string    `gorm:"type:char(36);not null;index" json:"author_id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 
 	// MentionReport is populated by CreateThread for the caller's own use
 	// (e.g. surfacing resolved/unresolved @handles in a tool response). It

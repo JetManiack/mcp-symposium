@@ -22,7 +22,6 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 
 	"encoding/json"
@@ -165,7 +164,17 @@ func runOperator(args []string) error {
 			return err
 		}
 		blob, _ := json.MarshalIndent(enc, "", "  ")
-		if err := os.WriteFile(out, blob, 0o600); err != nil {
+		// O_EXCL: overwriting an existing operator key destroys the trust
+		// root — every agent's pinned pubkey stops matching anything.
+		f, err := os.OpenFile(out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			return fmt.Errorf("refusing to overwrite %s (move it away first if you really mean to rotate the trust root): %w", out, err)
+		}
+		if _, err := f.Write(blob); err != nil {
+			f.Close()
+			return err
+		}
+		if err := f.Close(); err != nil {
 			return err
 		}
 		fmt.Printf("operator key written to %s (passphrase-encrypted; run keygen/sign only on your own machine, never on an agent host)\n", out)
@@ -327,8 +336,12 @@ func runSeal(args []string) error {
 	// The envelope is ciphertext — safe for stdout, it goes straight into
 	// the send_secret tool call.
 	fmt.Println(string(out))
-	fmt.Fprintf(os.Stderr, "sealed %d bytes for %s, secret_id %s, sha256(plaintext) %x\n",
-		len(plaintext), to, env.Header.SecretID, sha256.Sum256(plaintext))
+	// The ciphertext hash (not the plaintext's): it is already public in the
+	// signed header, matches on both ends for delivery comparison, and — unlike
+	// a plaintext hash — can't be used to brute-force a low-entropy secret
+	// offline from a transcript or log.
+	fmt.Fprintf(os.Stderr, "sealed %d bytes for %s, secret_id %s, sha256(ciphertext) %s\n",
+		len(plaintext), to, env.Header.SecretID, env.Header.CiphertextSHA256)
 	return nil
 }
 
@@ -421,9 +434,11 @@ func runOpen(args []string) error {
 	if err := os.Rename(tmpName, dest); err != nil {
 		return err
 	}
-	// Only the hash and size reach stdout — the agent never sees the value.
-	fmt.Printf("wrote %s: %d bytes, sha256 %x (sender verified: %s)\n",
-		dest, len(plaintext), sha256.Sum256(plaintext), senderBundle.Actor)
+	// Only the size and the ciphertext hash reach stdout — never the value,
+	// and never a plaintext hash (offline-brute-forceable for low-entropy
+	// secrets by anyone reading the transcript).
+	fmt.Printf("wrote %s: %d bytes, sha256(ciphertext) %s (sender verified: %s)\n",
+		dest, len(plaintext), env.Header.CiphertextSHA256, senderBundle.Actor)
 	return nil
 }
 
@@ -461,8 +476,19 @@ func pinsPath() string { return filepath.Join(keysDir(), "bundle_pins.json") }
 
 func checkBundlePin(b *secrethandoff.KeyBundle) error {
 	pins := map[string]int64{}
-	if data, err := os.ReadFile(pinsPath()); err == nil {
-		_ = json.Unmarshal(data, &pins)
+	data, err := os.ReadFile(pinsPath())
+	switch {
+	case err == nil:
+		// A corrupt pins file must fail closed: silently starting from an
+		// empty map would drop every rollback pin — the same fail-open
+		// pattern the replay seen-list fix removed.
+		if err := json.Unmarshal(data, &pins); err != nil {
+			return fmt.Errorf("bundle pins file %s is corrupt (%v) — refusing to proceed without rollback protection; restore or delete it deliberately", pinsPath(), err)
+		}
+	case os.IsNotExist(err):
+		// first use on this host
+	default:
+		return fmt.Errorf("cannot read bundle pins: %w — refusing to proceed without rollback protection", err)
 	}
 	seen := b.CreatedAt.UTC().Unix()
 	if pinned, ok := pins[b.Actor]; ok && seen < pinned {
@@ -473,9 +499,29 @@ func checkBundlePin(b *secrethandoff.KeyBundle) error {
 		if err := os.MkdirAll(keysDir(), 0o700); err != nil {
 			return err
 		}
-		data, _ := json.Marshal(pins)
-		if err := os.WriteFile(pinsPath(), data, 0o600); err != nil {
-			return fmt.Errorf("cannot persist bundle pin: %w — refusing to proceed without rollback protection", err)
+		out, _ := json.Marshal(pins)
+		// Atomic: WriteFile truncates in place, so a crash mid-write would
+		// corrupt the file and (now that corruption fails closed) lock the
+		// host out until manual repair.
+		tmp, err := os.CreateTemp(keysDir(), ".pins-*")
+		if err != nil {
+			return fmt.Errorf("cannot persist bundle pin: %w", err)
+		}
+		tmpName := tmp.Name()
+		defer os.Remove(tmpName)
+		if _, err := tmp.Write(out); err != nil {
+			tmp.Close()
+			return fmt.Errorf("cannot persist bundle pin: %w", err)
+		}
+		if err := tmp.Sync(); err != nil {
+			tmp.Close()
+			return fmt.Errorf("cannot persist bundle pin: %w", err)
+		}
+		if err := tmp.Close(); err != nil {
+			return fmt.Errorf("cannot persist bundle pin: %w", err)
+		}
+		if err := os.Rename(tmpName, pinsPath()); err != nil {
+			return fmt.Errorf("cannot persist bundle pin: %w", err)
 		}
 	}
 	return nil

@@ -7,6 +7,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"gorm.io/gorm"
 
+	"mcp-symposium/internal/humanauth"
+
 	"mcp-symposium/internal/storage"
 )
 
@@ -30,7 +32,11 @@ func listSecretHandoffsHandler(db *gorm.DB) http.HandlerFunc {
 func approveSecretHandoffHandler(db *gorm.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
-		if err := storage.ApproveSecretHandoff(db, id, time.Now()); err != nil {
+		approver := "operator"
+		if a, ok := humanauth.ActorFromContext(r.Context()); ok {
+			approver = a.DisplayName
+		}
+		if err := storage.ApproveSecretHandoff(db, id, approver, time.Now()); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}

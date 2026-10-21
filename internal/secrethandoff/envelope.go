@@ -177,6 +177,11 @@ func Open(env *Envelope, me string, senderBundle *KeyBundle,
 	if !ed25519.Verify(ed25519.PublicKey(senderBundle.SignPubKey), CanonicalHeaderBytes(h), env.SenderSig) {
 		return nil, ErrBadSignature
 	}
+	// Range-check before the multiply (overflow) and enforce the cap on the
+	// client too: a signed-but-oversized TTL must not extend the window.
+	if h.TTLSeconds <= 0 || h.TTLSeconds > int(MaxTTL.Seconds()) {
+		return nil, fmt.Errorf("%w: ttl_s %d outside (0, %d]", ErrExpired, h.TTLSeconds, int(MaxTTL.Seconds()))
+	}
 	expiry := h.CreatedAt.Add(time.Duration(h.TTLSeconds) * time.Second)
 	if now.Before(h.CreatedAt.Add(-time.Minute)) || now.After(expiry) {
 		return nil, fmt.Errorf("%w: created %s, ttl %ds, now %s", ErrExpired, h.CreatedAt, h.TTLSeconds, now)

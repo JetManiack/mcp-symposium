@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/crypto/nacl/box"
 
@@ -86,7 +87,7 @@ func TestSecretHandoffEndToEnd(t *testing.T) {
 		t.Fatalf("unmarshal fetched bundle: %v", err)
 	}
 
-	env, err := secrethandoff.Seal([]byte("sk-live-credential"), "", "hand-sender", "hand-recipient",
+	env, err := secrethandoff.Seal([]byte("sk-live-credential"), uuid.NewString(), "hand-sender", "hand-recipient",
 		"test-cred", secrethandoff.ClassRoutine, 10*time.Minute, fetchedBundle.EncPubKey, sSignPriv)
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
@@ -145,7 +146,7 @@ func TestAdminClassSecretNeedsApproval(t *testing.T) {
 	rEncPub, _, _ := box.GenerateKey(rand.Reader)
 	_ = opPriv
 
-	env, err := secrethandoff.Seal([]byte("cluster-admin-cred"), "", "adm-sender", "adm-recipient",
+	env, err := secrethandoff.Seal([]byte("cluster-admin-cred"), uuid.NewString(), "adm-sender", "adm-recipient",
 		"k8s-admin", secrethandoff.ClassAdmin, 10*time.Minute, rEncPub[:], sSignPriv)
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
@@ -209,7 +210,7 @@ func TestSendSecretRefusesForgedFrom(t *testing.T) {
 
 	_, signPriv, _ := ed25519.GenerateKey(rand.Reader)
 	rEncPub, _, _ := box.GenerateKey(rand.Reader)
-	env, err := secrethandoff.Seal([]byte("x"), "", "imp-a", "imp-r", "l",
+	env, err := secrethandoff.Seal([]byte("x"), uuid.NewString(), "imp-a", "imp-r", "l",
 		secrethandoff.ClassRoutine, time.Minute, rEncPub[:], signPriv)
 	if err != nil {
 		t.Fatal(err)
@@ -305,5 +306,61 @@ func TestExternalIDUpsert(t *testing.T) {
 	callTool(t, session, "get_thread", map[string]any{"external_id": "fp-123"}, &got)
 	if got.Thread.ID != first.ThreadID {
 		t.Fatalf("get_thread by external_id = %s, want %s", got.Thread.ID, first.ThreadID)
+	}
+}
+
+// TestForeignFetchAlertReachesSender pins the H2 fix from the independent
+// review: a foreign fetch must actually arrive at the sender through the
+// normal delivery surfaces (peek counts it, catch_up collects it), not
+// just fire a hub nudge that a waiter then can't see anything for.
+func TestForeignFetchAlertReachesSender(t *testing.T) {
+	db := openTestDB(t)
+	_, senderToken := newAgentWithToken(t, db, "al-sender")
+	newAgentWithToken(t, db, "al-recipient")
+	_, thiefToken := newAgentWithToken(t, db, "al-thief")
+
+	senderSession, cleanupS := newTestSession(t, db, senderToken)
+	defer cleanupS()
+	thiefSession, cleanupT := newTestSession(t, db, thiefToken)
+	defer cleanupT()
+
+	_, sSignPriv, _ := ed25519.GenerateKey(rand.Reader)
+	rEncPub, _, _ := box.GenerateKey(rand.Reader)
+	env, err := secrethandoff.Seal([]byte("x"), uuid.NewString(), "al-sender", "al-recipient", "l",
+		secrethandoff.ClassRoutine, 10*time.Minute, rEncPub[:], sSignPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envJSON, _ := secrethandoff.MarshalEnvelope(env)
+
+	var sendOut rendezvous.SendSecretOutput
+	callTool(t, senderSession, "send_secret", map[string]any{
+		"to": "al-recipient", "envelope_json": string(envJSON),
+	}, &sendOut)
+
+	callToolExpectError(t, thiefSession, "fetch_secret", map[string]any{"secret_id": sendOut.SecretID})
+
+	// peek (non-destructive) must count it…
+	var peek rendezvous.PeekOutput
+	callTool(t, senderSession, "peek", map[string]any{}, &peek)
+	if peek.UnseenHandoffAlertCount != 1 {
+		t.Fatalf("peek.UnseenHandoffAlertCount = %d, want 1", peek.UnseenHandoffAlertCount)
+	}
+
+	// …and catch_up must deliver and consume it.
+	var caught rendezvous.CatchUpOutput
+	callTool(t, senderSession, "catch_up", map[string]any{}, &caught)
+	if len(caught.HandoffAlerts) != 1 {
+		t.Fatalf("catch_up delivered %d alerts, want 1", len(caught.HandoffAlerts))
+	}
+	a := caught.HandoffAlerts[0]
+	if a.Kind != "foreign_fetch" || a.SecretID != sendOut.SecretID {
+		t.Fatalf("alert = %+v, want foreign_fetch on %s", a, sendOut.SecretID)
+	}
+
+	var again rendezvous.PeekOutput
+	callTool(t, senderSession, "peek", map[string]any{}, &again)
+	if again.UnseenHandoffAlertCount != 0 {
+		t.Fatalf("alert not consumed: count = %d", again.UnseenHandoffAlertCount)
 	}
 }

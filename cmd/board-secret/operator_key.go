@@ -53,26 +53,28 @@ func deriveKey(passphrase, salt []byte, n, r, p int) (*[32]byte, error) {
 // refuses to read from a pipe: the passphrase must come from a human at a
 // keyboard, not from a script or an agent's stdin.
 func readPassphrase(prompt string, confirm bool) ([]byte, error) {
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	// One code path for both sources: the /dev/tty fallback must apply the
+	// same confirm prompt and length minimum as direct-stdin, or a piped
+	// invocation can create a key with a typo'd or one-character passphrase.
+	fd := int(os.Stdin.Fd())
+	if !term.IsTerminal(fd) {
 		tty, err := os.Open("/dev/tty")
 		if err != nil {
 			return nil, errors.New("operator passphrase requires an interactive terminal")
 		}
 		defer tty.Close()
-		fmt.Fprint(os.Stderr, prompt)
-		pass, err := term.ReadPassword(int(tty.Fd()))
-		fmt.Fprintln(os.Stderr)
-		return pass, err
+		fd = int(tty.Fd())
 	}
+
 	fmt.Fprint(os.Stderr, prompt)
-	pass, err := term.ReadPassword(int(os.Stdin.Fd()))
+	pass, err := term.ReadPassword(fd)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return nil, err
 	}
 	if confirm {
 		fmt.Fprint(os.Stderr, "repeat: ")
-		again, err := term.ReadPassword(int(os.Stdin.Fd()))
+		again, err := term.ReadPassword(fd)
 		fmt.Fprintln(os.Stderr)
 		if err != nil {
 			return nil, err
@@ -80,9 +82,11 @@ func readPassphrase(prompt string, confirm bool) ([]byte, error) {
 		if string(pass) != string(again) {
 			return nil, errors.New("passphrases do not match")
 		}
-	}
-	if len(pass) < 16 {
-		return nil, errors.New("passphrase must be at least 16 characters — the key file is offline-attackable, so use a long phrase (e.g. diceware)")
+		// The minimum applies at key creation (confirm=true) only: a key
+		// already sealed under a shorter phrase must stay unlockable.
+		if len(pass) < 16 {
+			return nil, errors.New("passphrase must be at least 16 characters — the key file is offline-attackable, so use a long phrase (e.g. diceware)")
+		}
 	}
 	return pass, nil
 }

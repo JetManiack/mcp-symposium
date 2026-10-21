@@ -44,6 +44,7 @@ type SecretHandoff struct {
 
 	// Admin-class releases need this set by the operator first.
 	ApprovedAt *time.Time `json:"approved_at,omitempty"`
+	ApprovedBy string     `gorm:"type:varchar(255);not null;default:''" json:"approved_by,omitempty"`
 }
 
 // Named errors so the tool layer can map each refusal to a distinct,
@@ -68,55 +69,60 @@ func CreateSecretHandoff(db *gorm.DB, h *SecretHandoff) error {
 //     the row, so the caller can say who got it and when;
 //   - an unapproved admin-class secret returns ErrSecretNeedsApproval.
 func FetchSecretHandoff(db *gorm.DB, id, actorID string, now time.Time) (*SecretHandoff, string, error) {
-	var envelope string
-	var out SecretHandoff
-	err := db.Transaction(func(tx *gorm.DB) error {
-		var h SecretHandoff
-		if err := tx.First(&h, "id = ?", id).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrSecretNotFound
-			}
-			return err
-		}
-		out = h
-
-		if h.ToActorID != actorID {
-			return ErrSecretForeignFetch
-		}
-		// "Already fetched" outranks "expired": it's the theft alarm the
-		// spec wants the legitimate recipient to see, even late.
-		if h.FetchedAt != nil {
-			return ErrSecretAlreadyFetched
-		}
-		if now.After(h.ExpiresAt) || h.EnvelopeJSON == "" {
-			return ErrSecretNotFound
-		}
-		if h.Class == "admin" && h.ApprovedAt == nil {
-			return ErrSecretNeedsApproval
-		}
-
-		envelope = h.EnvelopeJSON
-		if err := tx.Model(&SecretHandoff{}).Where("id = ?", id).Updates(map[string]interface{}{
-			"envelope_json":    "",
+	// Claim first, atomically: one UPDATE whose WHERE carries every guard,
+	// so under READ COMMITTED on Postgres two concurrent fetches cannot both
+	// win — the row-level write lock serializes them and the loser matches
+	// zero rows. A read-then-update inside a plain transaction did NOT give
+	// that guarantee (both could read the pre-update row); only SQLite's
+	// single-connection pool masked it.
+	claim := db.Model(&SecretHandoff{}).
+		Where("id = ? AND to_actor_id = ? AND fetched_at IS NULL AND envelope_json <> '' AND expires_at >= ? AND (class <> 'admin' OR approved_at IS NOT NULL)",
+			id, actorID, now).
+		Updates(map[string]interface{}{
 			"fetched_at":       now,
 			"fetched_by_actor": actorID,
-		}).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		// The foreign-attempt counter must survive the refusal, so it is
-		// written outside the (rolled-back) transaction.
-		if errors.Is(err, ErrSecretForeignFetch) {
-			db.Model(&SecretHandoff{}).Where("id = ?", id).
-				UpdateColumn("foreign_attempts", gorm.Expr("foreign_attempts + 1"))
-		}
-		return &out, "", err
+		})
+	if claim.Error != nil {
+		return nil, "", claim.Error
 	}
-	out.FetchedAt = &now
-	out.FetchedByActor = actorID
-	return &out, envelope, nil
+
+	var h SecretHandoff
+	if err := db.First(&h, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, "", ErrSecretNotFound
+		}
+		return nil, "", err
+	}
+
+	if claim.RowsAffected == 1 {
+		// We won the claim. Hand the envelope out and blank it — the claim
+		// already made any concurrent fetch lose, so this pair of writes
+		// doesn't race anyone.
+		envelope := h.EnvelopeJSON
+		if err := db.Model(&SecretHandoff{}).Where("id = ?", id).
+			UpdateColumn("envelope_json", "").Error; err != nil {
+			return &h, "", err
+		}
+		h.EnvelopeJSON = ""
+		return &h, envelope, nil
+	}
+
+	// The claim matched nothing: classify why, by severity of what it means.
+	switch {
+	case h.ToActorID != actorID:
+		// Theft marker; the counter write is atomic and survives.
+		db.Model(&SecretHandoff{}).Where("id = ?", id).
+			UpdateColumn("foreign_attempts", gorm.Expr("foreign_attempts + 1"))
+		return &h, "", ErrSecretForeignFetch
+	case h.FetchedAt != nil:
+		// "Already fetched" outranks "expired": it's the theft alarm the
+		// spec wants the legitimate recipient to see, even late.
+		return &h, "", ErrSecretAlreadyFetched
+	case h.Class == "admin" && h.ApprovedAt == nil:
+		return &h, "", ErrSecretNeedsApproval
+	default:
+		return &h, "", ErrSecretNotFound
+	}
 }
 
 // SweepExpiredSecrets blanks the blobs of expired, unfetched handoffs.
@@ -129,15 +135,18 @@ func SweepExpiredSecrets(db *gorm.DB, now time.Time) error {
 }
 
 // ApproveSecretHandoff marks an admin-class handoff releasable. Human/REST
-// side only — there is deliberately no MCP tool for this.
-func ApproveSecretHandoff(db *gorm.DB, id string, now time.Time) error {
-	res := db.Model(&SecretHandoff{}).Where("id = ? AND approved_at IS NULL", id).
-		Update("approved_at", now)
+// side only — there is deliberately no MCP tool for this. approver is the
+// human identity performing it, recorded for the audit feed. Only a live
+// (unfetched, unexpired) handoff can be approved.
+func ApproveSecretHandoff(db *gorm.DB, id, approver string, now time.Time) error {
+	res := db.Model(&SecretHandoff{}).
+		Where("id = ? AND approved_at IS NULL AND fetched_at IS NULL AND expires_at >= ?", id, now).
+		Updates(map[string]interface{}{"approved_at": now, "approved_by": approver})
 	if res.Error != nil {
 		return res.Error
 	}
 	if res.RowsAffected == 0 {
-		return fmt.Errorf("handoff %q not found or already approved", id)
+		return fmt.Errorf("handoff %q not found, already approved, already fetched, or expired", id)
 	}
 	return nil
 }
@@ -187,4 +196,59 @@ func ListSecretHandoffs(db *gorm.DB, limit int) ([]SecretHandoff, error) {
 		return nil, err
 	}
 	return rows, nil
+}
+
+// HandoffAlert is a security event on a secret handoff that must reach its
+// sender (and the operator) through the normal delivery surfaces — a
+// foreign fetch attempt or a double fetch. It rides catch_up/peek/
+// wait_for_activity like replies and mentions do, so a live watcher
+// actually wakes on it (a bare hub nudge alone wakes the waiter, which
+// then finds "nothing new" and goes back to sleep).
+type HandoffAlert struct {
+	ID       string `gorm:"type:char(36);primaryKey" json:"id"`
+	ActorID  string `gorm:"type:char(36);not null;index" json:"actor_id"` // who must see it
+	SecretID string `gorm:"type:char(36);not null" json:"secret_id"`
+	// Kind: "foreign_fetch" (someone other than the recipient asked) or
+	// "double_fetch" (the recipient asked again after a successful fetch).
+	Kind      string     `gorm:"type:varchar(20);not null" json:"kind"`
+	ByActorID string     `gorm:"type:char(36)" json:"by_actor_id"` // who triggered it
+	CreatedAt time.Time  `gorm:"index" json:"created_at"`
+	SeenAt    *time.Time `json:"seen_at,omitempty"`
+}
+
+// CreateHandoffAlert records an alert for actorID. Best-effort callers may
+// ignore the error, but the row is the delivery — don't skip it silently.
+func CreateHandoffAlert(db *gorm.DB, id, actorID, secretID, kind, byActorID string) error {
+	return db.Create(&HandoffAlert{
+		ID: id, ActorID: actorID, SecretID: secretID, Kind: kind, ByActorID: byActorID,
+	}).Error
+}
+
+// UnseenHandoffAlerts returns actorID's unseen alerts, marking them seen —
+// the same consuming semantics as CatchUp.
+func UnseenHandoffAlerts(db *gorm.DB, actorID string) ([]HandoffAlert, error) {
+	var alerts []HandoffAlert
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("actor_id = ? AND seen_at IS NULL", actorID).
+			Order("created_at asc").Find(&alerts).Error; err != nil {
+			return err
+		}
+		if len(alerts) == 0 {
+			return nil
+		}
+		now := time.Now()
+		return tx.Model(&HandoffAlert{}).
+			Where("actor_id = ? AND seen_at IS NULL", actorID).
+			Update("seen_at", now).Error
+	})
+	return alerts, err
+}
+
+// CountUnseenHandoffAlerts is the non-destructive counterpart for peek and
+// wait_for_activity.
+func CountUnseenHandoffAlerts(db *gorm.DB, actorID string) (int, error) {
+	var n int64
+	err := db.Model(&HandoffAlert{}).
+		Where("actor_id = ? AND seen_at IS NULL", actorID).Count(&n).Error
+	return int(n), err
 }

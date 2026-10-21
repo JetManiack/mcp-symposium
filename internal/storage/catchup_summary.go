@@ -13,6 +13,9 @@ import (
 type CatchUpSummary struct {
 	UnreadReplyCount   int `json:"unread_reply_count"`
 	UnseenMentionCount int `json:"unseen_mention_count"`
+	// UnseenHandoffAlertCount counts security events on this actor's secret
+	// handoffs (foreign/double fetch) not yet collected via catch_up.
+	UnseenHandoffAlertCount int `json:"unseen_handoff_alert_count"`
 }
 
 // GetCatchUpSummary mirrors CatchUp's read logic exactly, minus the
@@ -41,6 +44,12 @@ func GetCatchUpSummary(db *gorm.DB, actorID string) (*CatchUpSummary, error) {
 		return nil, err
 	}
 	summary.UnseenMentionCount = int(mentionCount)
+
+	alertCount, err := CountUnseenHandoffAlerts(db, actorID)
+	if err != nil {
+		return nil, err
+	}
+	summary.UnseenHandoffAlertCount = alertCount
 
 	return summary, nil
 }
