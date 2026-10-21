@@ -193,3 +193,117 @@ func TestBodyGuardRejectsSecretShapedPosts(t *testing.T) {
 		t.Fatalf("reply error = %q, want the secret guard", msg)
 	}
 }
+
+// TestSendSecretRefusesForgedFrom pins the k8s negative-pass finding 1
+// (server half): an enrolled caller cannot send an envelope whose header
+// claims a different From.
+func TestSendSecretRefusesForgedFrom(t *testing.T) {
+	db := openTestDB(t)
+	_, impToken := newAgentWithToken(t, db, "imp-c")
+	newAgentWithToken(t, db, "imp-a") // the victim whose name is claimed
+	_, recipToken := newAgentWithToken(t, db, "imp-r")
+	_ = recipToken
+
+	impSession, cleanup := newTestSession(t, db, impToken)
+	defer cleanup()
+
+	_, signPriv, _ := ed25519.GenerateKey(rand.Reader)
+	rEncPub, _, _ := box.GenerateKey(rand.Reader)
+	env, err := secrethandoff.Seal([]byte("x"), "", "imp-a", "imp-r", "l",
+		secrethandoff.ClassRoutine, time.Minute, rEncPub[:], signPriv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envJSON, _ := secrethandoff.MarshalEnvelope(env)
+
+	msg := callToolExpectError(t, impSession, "send_secret", map[string]any{
+		"to": "imp-r", "envelope_json": string(envJSON),
+	})
+	if !strings.Contains(msg, "not the calling actor") {
+		t.Fatalf("forged From error = %q", msg)
+	}
+}
+
+// TestSetKeyBundleRefusesForeignActor pins the k8s finding 2: a caller
+// cannot publish a bundle naming another actor.
+func TestSetKeyBundleRefusesForeignActor(t *testing.T) {
+	db := openTestDB(t)
+	_, cToken := newAgentWithToken(t, db, "bundle-c")
+	newAgentWithToken(t, db, "bundle-a")
+
+	session, cleanup := newTestSession(t, db, cToken)
+	defer cleanup()
+
+	_, opPriv, _ := ed25519.GenerateKey(rand.Reader)
+	encPub, _, _ := box.GenerateKey(rand.Reader)
+	signPub, _, _ := ed25519.GenerateKey(rand.Reader)
+	b := &secrethandoff.KeyBundle{
+		Actor: "bundle-a", EncPubKey: encPub[:], SignPubKey: signPub,
+		CreatedAt: time.Now().UTC().Truncate(time.Second),
+	}
+	b.OperatorSig = ed25519.Sign(opPriv, secrethandoff.CanonicalBundleBytes(b))
+	bj, _ := json.Marshal(b)
+
+	msg := callToolExpectError(t, session, "set_key_bundle", map[string]any{"bundle_json": string(bj)})
+	if !strings.Contains(msg, "not the calling actor") {
+		t.Fatalf("foreign bundle error = %q", msg)
+	}
+}
+
+// TestToolAllowlistScopesActor pins the per-actor tool allowlist: a scoped
+// actor can call what it's allowed and nothing else.
+func TestToolAllowlistScopesActor(t *testing.T) {
+	db := openTestDB(t)
+	scoped, token := newAgentWithToken(t, db, "scoped-poster")
+	if err := db.Model(scoped).Update("tool_allowlist", "create_thread,reply,get_thread,list_threads").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	session, cleanup := newTestSession(t, db, token)
+	defer cleanup()
+
+	var created rendezvous.CreateThreadOutput
+	callTool(t, session, "create_thread", map[string]any{
+		"title": "allowed", "body": "scoped actor can post",
+	}, &created)
+
+	msg := callToolExpectError(t, session, "catch_up", map[string]any{})
+	if !strings.Contains(msg, "scoped token") {
+		t.Fatalf("catch_up as scoped actor = %q, want scoped-token refusal", msg)
+	}
+	msg = callToolExpectError(t, session, "fetch_secret", map[string]any{"secret_id": "any"})
+	if !strings.Contains(msg, "scoped token") {
+		t.Fatalf("fetch_secret as scoped actor = %q, want scoped-token refusal", msg)
+	}
+}
+
+// TestExternalIDUpsert pins the dedup contract: same external_id returns
+// the existing thread instead of a duplicate, and get_thread resolves it.
+func TestExternalIDUpsert(t *testing.T) {
+	db := openTestDB(t)
+	_, token := newAgentWithToken(t, db, "sentinel")
+	session, cleanup := newTestSession(t, db, token)
+	defer cleanup()
+
+	var first rendezvous.CreateThreadOutput
+	callTool(t, session, "create_thread", map[string]any{
+		"title": "finding fp-123", "body": "first occurrence", "external_id": "fp-123",
+	}, &first)
+	if first.Existing {
+		t.Fatal("first create reported existing")
+	}
+
+	var second rendezvous.CreateThreadOutput
+	callTool(t, session, "create_thread", map[string]any{
+		"title": "finding fp-123", "body": "repeat", "external_id": "fp-123",
+	}, &second)
+	if !second.Existing || second.ThreadID != first.ThreadID {
+		t.Fatalf("second create = %+v, want existing thread %s", second, first.ThreadID)
+	}
+
+	var got rendezvous.GetThreadOutput
+	callTool(t, session, "get_thread", map[string]any{"external_id": "fp-123"}, &got)
+	if got.Thread.ID != first.ThreadID {
+		t.Fatalf("get_thread by external_id = %s, want %s", got.Thread.ID, first.ThreadID)
+	}
+}

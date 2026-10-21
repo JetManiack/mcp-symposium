@@ -16,11 +16,17 @@ type CreateThreadInput struct {
 	Title string   `json:"title" jsonschema:"the thread title"`
 	Body  string   `json:"body" jsonschema:"the thread body, in detail"`
 	Tags  []string `json:"tags,omitempty" jsonschema:"free-form tags for this thread"`
+	// ExternalID lets automated posters dedup: if a thread with this id
+	// already exists, it is returned (existing: true) instead of a duplicate.
+	ExternalID string `json:"external_id,omitempty" jsonschema:"optional unique dedup key; if a thread with it exists, that thread is returned instead of creating a duplicate"`
 }
 
 type CreateThreadOutput struct {
 	ThreadID string                `json:"thread_id"`
 	Mentions storage.MentionReport `json:"mentions"`
+	// Existing is true when ExternalID matched an existing thread and no
+	// new thread was created — reply into it instead.
+	Existing bool `json:"existing,omitempty"`
 }
 
 func createThreadHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp.ToolHandlerFor[CreateThreadInput, CreateThreadOutput] {
@@ -33,7 +39,16 @@ func createThreadHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp
 		if err := checkBodyForSecrets(in.Title + "\n" + in.Body); err != nil {
 			return nil, CreateThreadOutput{}, err
 		}
-		thread, err := storage.CreateThread(db, actor.ID, in.Title, in.Body, in.Tags)
+
+		var externalID *string
+		if in.ExternalID != "" {
+			if existing, err := storage.GetThreadByExternalID(db, in.ExternalID); err == nil {
+				return nil, CreateThreadOutput{ThreadID: existing.ID, Existing: true}, nil
+			}
+			externalID = &in.ExternalID
+		}
+
+		thread, err := storage.CreateThreadExt(db, actor.ID, in.Title, in.Body, in.Tags, externalID)
 		if err != nil {
 			return nil, CreateThreadOutput{}, err
 		}

@@ -2,6 +2,7 @@ package restapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -112,5 +113,34 @@ func revokeTokenHandler(db *gorm.DB) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+type setAllowlistRequest struct {
+	// ToolAllowlist is a comma-separated tool-name list; empty clears the
+	// restriction (unrestricted).
+	ToolAllowlist string `json:"tool_allowlist"`
+}
+
+// setAllowlistHandler scopes an actor's token to a fixed tool set. Admin
+// REST only: an agent must never be able to widen (or set) its own scope.
+func setAllowlistHandler(db *gorm.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		var req setAllowlistRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		res := db.Model(&storage.Actor{}).Where("id = ?", id).Update("tool_allowlist", req.ToolAllowlist)
+		if res.Error != nil {
+			writeError(w, http.StatusInternalServerError, res.Error)
+			return
+		}
+		if res.RowsAffected == 0 {
+			writeError(w, http.StatusNotFound, fmt.Errorf("actor %q not found", id))
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"id": id, "tool_allowlist": req.ToolAllowlist})
 	}
 }

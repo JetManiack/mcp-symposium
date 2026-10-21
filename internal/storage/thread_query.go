@@ -108,3 +108,14 @@ func decodeThreadCursor(cursor string) (time.Time, string, error) {
 	}
 	return t, parts[1], nil
 }
+
+// GetThreadByExternalID resolves an external dedup key to its thread ID,
+// or returns gorm.ErrRecordNotFound. Automated posters use it to upsert:
+// reply into the existing thread instead of opening a duplicate.
+func GetThreadByExternalID(db *gorm.DB, externalID string) (*Thread, error) {
+	var t Thread
+	if err := db.First(&t, "external_id = ?", externalID).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}

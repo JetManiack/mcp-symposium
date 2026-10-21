@@ -144,6 +144,10 @@ func recorded[In, Out any](db *gorm.DB, tool string,
 	h mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (
 		*mcp.CallToolResult, Out, error) {
+		if err := checkToolAllowed(ctx, tool); err != nil {
+			var zero Out
+			return nil, zero, err
+		}
 		start := time.Now()
 		result, out, err := h(ctx, req, in)
 		go func() {
@@ -197,6 +201,10 @@ func recordedMetaOnly[In, Out any](db *gorm.DB, tool string,
 	h mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in In) (
 		*mcp.CallToolResult, Out, error) {
+		if err := checkToolAllowed(ctx, tool); err != nil {
+			var zero Out
+			return nil, zero, err
+		}
 		start := time.Now()
 		result, out, err := h(ctx, req, in)
 		go func() {
@@ -220,4 +228,19 @@ func recordedMetaOnly[In, Out any](db *gorm.DB, tool string,
 		}()
 		return result, out, err
 	}
+}
+
+// checkToolAllowed enforces the actor's tool allowlist (set by the admin
+// over REST; empty = unrestricted). One choke point for every tool, so a
+// scoped actor (e.g. an automated poster allowed only create_thread/reply)
+// can't reach anything else whatever its token tries.
+func checkToolAllowed(ctx context.Context, tool string) error {
+	actor, ok := auth.ActorFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("no authenticated actor in context")
+	}
+	if !actor.AllowedTool(tool) {
+		return fmt.Errorf("actor %q is not allowed to call %q (scoped token)", actor.DisplayName, tool)
+	}
+	return nil
 }

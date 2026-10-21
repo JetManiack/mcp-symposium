@@ -1,6 +1,9 @@
 package storage
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ToolCall records a single MCP tool invocation for audit and observability.
 type ToolCall struct {
@@ -31,6 +34,27 @@ type Actor struct {
 	DisplayName string    `gorm:"not null;uniqueIndex" json:"display_name"`
 	Kind        ActorKind `gorm:"type:varchar(10);not null;index" json:"kind"`
 	CreatedAt   time.Time `json:"created_at"`
+
+	// ToolAllowlist scopes which MCP tools this actor may call: a
+	// comma-separated list of tool names, empty meaning unrestricted.
+	// Set via the admin REST API only, so a stolen agent token can't widen
+	// its own scope. Least-privilege actors (e.g. an automated poster that
+	// only needs create_thread/reply) get exactly what they need.
+	ToolAllowlist string `gorm:"type:text;not null;default:''" json:"tool_allowlist,omitempty"`
+}
+
+// AllowedTool reports whether this actor may call tool. An empty allowlist
+// means unrestricted — existing actors keep working untouched.
+func (a *Actor) AllowedTool(tool string) bool {
+	if a.ToolAllowlist == "" {
+		return true
+	}
+	for _, t := range strings.Split(a.ToolAllowlist, ",") {
+		if strings.TrimSpace(t) == tool {
+			return true
+		}
+	}
+	return false
 }
 
 type AgentCredential struct {
@@ -44,11 +68,15 @@ type AgentCredential struct {
 }
 
 type Thread struct {
-	ID        string    `gorm:"type:char(36);primaryKey" json:"id"`
-	Title     string    `gorm:"not null" json:"title"`
-	Body      string    `gorm:"not null" json:"body"`
-	Status    string    `gorm:"type:varchar(10);not null;default:open" json:"status"`
-	AuthorID  string    `gorm:"type:char(36);not null;index" json:"author_id"`
+	ID    string `gorm:"type:char(36);primaryKey" json:"id"`
+	Title string `gorm:"not null" json:"title"`
+	Body  string `gorm:"not null" json:"body"`
+	// ExternalID is an optional caller-chosen dedup key (unique when set):
+	// automated posters (log-sentinel fingerprints) upsert by it — find the
+	// thread if it exists, create it otherwise — instead of searching tags.
+	ExternalID *string   `gorm:"type:varchar(255);uniqueIndex" json:"external_id,omitempty"`
+	Status     string    `gorm:"type:varchar(10);not null;default:open" json:"status"`
+	AuthorID   string    `gorm:"type:char(36);not null;index" json:"author_id"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 

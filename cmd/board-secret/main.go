@@ -319,6 +319,13 @@ func runOpen(args []string) error {
 		return fmt.Errorf("stdin is not an envelope: %w", err)
 	}
 
+	// The bundle must belong to the actor the header claims as sender —
+	// otherwise any enrolled actor could send From:"someone-trusted" and
+	// have the signature verify against its own bundle.
+	if senderBundle.Actor != env.Header.From {
+		return fmt.Errorf("--from-bundle is for actor %q but the envelope claims From=%q — refusing", senderBundle.Actor, env.Header.From)
+	}
+
 	if err := checkSeenList(env.Header.SecretID); err != nil {
 		return err
 	}
@@ -328,15 +335,46 @@ func runOpen(args []string) error {
 		return err
 	}
 
+	// Record the id BEFORE writing the secret, durably: replay protection
+	// must fail closed. If this host can't persist the seen-list, it must
+	// not accept the secret either.
+	if err := markSeen(env.Header.SecretID); err != nil {
+		return fmt.Errorf("cannot persist replay protection (seen_ids): %w — refusing to write the secret", err)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(dest, plaintext, 0o600); err != nil {
+	// Atomic 0600 write: a temp file in the jail + rename. os.WriteFile
+	// would keep a pre-existing file's wider mode, and a direct write races
+	// the earlier symlink check.
+	tmp, err := os.CreateTemp(filepath.Dir(dest), ".board-secret-*")
+	if err != nil {
 		return err
 	}
-	_ = markSeen(env.Header.SecretID)
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op after a successful rename
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(plaintext); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, dest); err != nil {
+		return err
+	}
 	// Only the hash and size reach stdout — the agent never sees the value.
-	fmt.Printf("wrote %s: %d bytes, sha256 %x\n", dest, len(plaintext), sha256.Sum256(plaintext))
+	fmt.Printf("wrote %s: %d bytes, sha256 %x (sender verified: %s)\n",
+		dest, len(plaintext), sha256.Sum256(plaintext), senderBundle.Actor)
 	return nil
 }
 
@@ -358,7 +396,40 @@ func loadVerifiedBundle(path string, k *agentKeys) (*secrethandoff.KeyBundle, er
 	if err := secrethandoff.VerifyBundle(&b, ed25519.PublicKey(k.OperatorPub)); err != nil {
 		return nil, fmt.Errorf("%s: %w — tell the operator", path, err)
 	}
+	// Rollback guard: an operator signature never expires, so after a key
+	// rotation the OLD bundle still verifies — and a compromised server can
+	// keep serving it, directing senders to the leaked key. Pin the newest
+	// created_at ever accepted per actor and refuse anything older.
+	if err := checkBundlePin(&b); err != nil {
+		return nil, err
+	}
 	return &b, nil
+}
+
+// bundle pins live in ~/.board-secret/bundle_pins.json: actor -> unix time
+// of the newest accepted bundle.
+func pinsPath() string { return filepath.Join(keysDir(), "bundle_pins.json") }
+
+func checkBundlePin(b *secrethandoff.KeyBundle) error {
+	pins := map[string]int64{}
+	if data, err := os.ReadFile(pinsPath()); err == nil {
+		_ = json.Unmarshal(data, &pins)
+	}
+	seen := b.CreatedAt.UTC().Unix()
+	if pinned, ok := pins[b.Actor]; ok && seen < pinned {
+		return fmt.Errorf("bundle for %q is older (created %s) than one previously accepted on this host — possible rollback to a rotated key; refusing. If the rotation is legitimate, the operator must sign a NEWER bundle", b.Actor, b.CreatedAt)
+	}
+	if pinned, ok := pins[b.Actor]; !ok || seen > pinned {
+		pins[b.Actor] = seen
+		if err := os.MkdirAll(keysDir(), 0o700); err != nil {
+			return err
+		}
+		data, _ := json.Marshal(pins)
+		if err := os.WriteFile(pinsPath(), data, 0o600); err != nil {
+			return fmt.Errorf("cannot persist bundle pin: %w — refusing to proceed without rollback protection", err)
+		}
+	}
+	return nil
 }
 
 // confineToSecretsDir resolves outPath strictly inside ~/.secrets: no "..",
@@ -378,8 +449,12 @@ func confineToSecretsDir(outPath string) (string, error) {
 	if p != jail && !strings.HasPrefix(p, jail+string(filepath.Separator)) {
 		return "", fmt.Errorf("--out must stay under %s (got %s)", jail, outPath)
 	}
-	// Refuse a symlink at the destination or any symlinked parent inside
-	// the jail: a link pointing outside would defeat the confinement.
+	// Refuse a symlink at the destination, any symlinked parent inside the
+	// jail, or the jail itself: a link pointing outside would defeat the
+	// confinement.
+	if fi, err := os.Lstat(jail); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return "", fmt.Errorf("%s itself is a symlink; refusing", jail)
+	}
 	for probe := p; probe != jail && strings.HasPrefix(probe, jail); probe = filepath.Dir(probe) {
 		if fi, err := os.Lstat(probe); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 			return "", fmt.Errorf("%s is a symlink; refusing", probe)
@@ -413,9 +488,17 @@ func markSeen(id string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = fmt.Fprintln(f, id)
-	return err
+	if _, err := fmt.Fprintln(f, id); err != nil {
+		f.Close()
+		return err
+	}
+	// fsync before the secret is written: replay protection must survive a
+	// crash between "accepted" and "stored".
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // --- tiny flag helpers (stdlib flag fights subcommands) -------------------

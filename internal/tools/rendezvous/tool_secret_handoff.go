@@ -53,6 +53,12 @@ func setKeyBundleHandler(db *gorm.DB) mcp.ToolHandlerFor[SetKeyBundleInput, SetK
 		if len(b.EncPubKey) != 32 || len(b.SignPubKey) != 32 || len(b.OperatorSig) == 0 {
 			return nil, SetKeyBundleOutput{}, fmt.Errorf("bundle is missing keys or the operator signature")
 		}
+		// The bundle's actor must be the caller: otherwise a stolen token can
+		// publish someone else's (or an old rotated) signed bundle under its
+		// own slot and confuse senders.
+		if named, err := storage.FindActorByName(db, b.Actor); err != nil || named.ID != actor.ID {
+			return nil, SetKeyBundleOutput{}, fmt.Errorf("bundle is for actor %q, which is not the calling actor", b.Actor)
+		}
 		if err := storage.UpsertKeyBundle(db, actor.ID, in.BundleJSON); err != nil {
 			return nil, SetKeyBundleOutput{}, err
 		}
@@ -118,6 +124,17 @@ func sendSecretHandler(db *gorm.DB, hub *activity.Hub) mcp.ToolHandlerFor[SendSe
 		}
 		if h.Class != secrethandoff.ClassRoutine && h.Class != secrethandoff.ClassAdmin {
 			return nil, SendSecretOutput{}, fmt.Errorf("class must be routine or admin")
+		}
+
+		// The envelope's From must be the calling actor: the metadata row,
+		// operator feed and foreign-fetch alarms all trust it, so a caller
+		// must not be able to send as someone else.
+		if named, err := storage.FindActorByName(db, h.From); err != nil || named.ID != actor.ID {
+			return nil, SendSecretOutput{}, fmt.Errorf("envelope From=%q is not the calling actor", h.From)
+		}
+		// Likewise To must match the addressed recipient.
+		if h.To != in.To {
+			return nil, SendSecretOutput{}, fmt.Errorf("envelope To=%q does not match the to argument %q", h.To, in.To)
 		}
 
 		recipient, err := storage.FindActorByName(db, in.To)

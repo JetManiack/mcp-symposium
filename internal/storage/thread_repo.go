@@ -18,6 +18,13 @@ var (
 )
 
 func CreateThread(db *gorm.DB, authorID, title, body string, tags []string) (*Thread, error) {
+	return CreateThreadExt(db, authorID, title, body, tags, nil)
+}
+
+// CreateThreadExt is CreateThread plus an optional external dedup key.
+// A non-nil externalID must be unique across threads; automated posters
+// use it to upsert (GetThreadByExternalID first, create on miss).
+func CreateThreadExt(db *gorm.DB, authorID, title, body string, tags []string, externalID *string) (*Thread, error) {
 	if strings.TrimSpace(title) == "" {
 		return nil, ErrEmptyTitle
 	}
@@ -26,11 +33,12 @@ func CreateThread(db *gorm.DB, authorID, title, body string, tags []string) (*Th
 	}
 
 	thread := &Thread{
-		ID:       uuid.NewString(),
-		Title:    title,
-		Body:     body,
-		Status:   "open",
-		AuthorID: authorID,
+		ID:         uuid.NewString(),
+		Title:      title,
+		Body:       body,
+		ExternalID: externalID,
+		Status:     "open",
+		AuthorID:   authorID,
 	}
 
 	err := db.Transaction(func(tx *gorm.DB) error {

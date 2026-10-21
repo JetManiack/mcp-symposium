@@ -50,6 +50,7 @@ func NewHandler(db *gorm.DB, provider humanauth.Provider) http.Handler {
 		r.With(humanauth.RequireAdmin).Post("/", createAgentHandler(db))
 		r.With(humanauth.RequireAdmin).Delete("/{id}", deleteAgentHandler(db))
 		r.With(humanauth.RequireAdmin).Post("/{id}/credentials", issueTokenHandler(db))
+		r.With(humanauth.RequireAdmin).Put("/{id}/allowlist", setAllowlistHandler(db))
 	})
 	r.With(humanauth.RequireAdmin).Delete("/credentials/{id}", revokeTokenHandler(db))
 
