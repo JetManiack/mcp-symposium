@@ -287,8 +287,20 @@ func runKeys(args []string) error {
 		return err
 	}
 	b := bundleFromKeys(k)
-	fmt.Printf("actor: %s\nfingerprint: %s\noperator key pinned: %v\n",
-		k.Actor, secrethandoff.Fingerprint(b), len(k.OperatorPub) == ed25519.PublicKeySize)
+	if out := flagValue(args, "--bundle", ""); out != "" || hasFlag(args, "--bundle") {
+		// Export the unsigned bundle (public fields only) for the operator
+		// to sign — spares agents hand-assembling the JSON from agent.key.
+		data, _ := json.MarshalIndent(b, "", "  ")
+		if out == "" || out == "-" {
+			fmt.Println(string(data))
+		} else if err := os.WriteFile(out, append(data, '\n'), 0o600); err != nil {
+			return err
+		} else {
+			fmt.Fprintf(os.Stderr, "unsigned bundle written to %s\n", out)
+		}
+	}
+	fmt.Printf("actor: %s\nactor_id: %s\nfingerprint: %s\noperator key pinned: %v\n",
+		k.Actor, k.ActorID, secrethandoff.Fingerprint(b), len(k.OperatorPub) == ed25519.PublicKeySize)
 	return nil
 }
 
