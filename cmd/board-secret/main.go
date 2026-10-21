@@ -126,9 +126,20 @@ func runOperator(args []string) error {
 	switch args[0] {
 	case "keygen":
 		out := flagValue(args[1:], "--out", filepath.Join(keysDir(), "operator.key"))
+		toStdout := hasFlag(args[1:], "--stdout")
 		pub, priv, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			return err
+		}
+		if toStdout {
+			// Vault mode: nothing touches disk. The private key is printed
+			// once (base64) for the operator to store in a password manager
+			// (KeePassXC etc.); signing later reads it back via --key -.
+			fmt.Printf("operator public key (embed in each agent's pinned config):\n%s\n",
+				base64.StdEncoding.EncodeToString(pub))
+			fmt.Printf("operator PRIVATE key — store it in your password manager NOW, it is shown exactly once and saved nowhere:\n%s\n",
+				base64.StdEncoding.EncodeToString(priv))
+			return nil
 		}
 		// The private half is passphrase-encrypted before it touches disk:
 		// on a machine that also runs an agent under the same uid, a
@@ -158,15 +169,33 @@ func runOperator(args []string) error {
 		keyPath := flagValue(rest, "--key", filepath.Join(keysDir(), "operator.key"))
 		bundlePath := lastPositional(rest)
 		if bundlePath == "" {
-			return fmt.Errorf("usage: board-secret operator sign [--key file] <bundle.json>")
+			return fmt.Errorf("usage: board-secret operator sign [--key file|--key -] <bundle.json>")
 		}
-		pass, err := readPassphrase("operator key passphrase: ", false)
-		if err != nil {
-			return err
-		}
-		_, priv, err := openOperatorKey(keyPath, pass)
-		if err != nil {
-			return err
+		var priv ed25519.PrivateKey
+		if keyPath == "-" {
+			// The key arrives base64 on stdin (e.g. piped straight from a
+			// password manager: keepassxc-cli show -s -a password db entry |
+			// board-secret operator sign --key - bundle.json). It never
+			// touches disk, and no passphrase prompt is needed — the vault
+			// already gated access.
+			raw, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
+			if err != nil {
+				return err
+			}
+			decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+			if err != nil || len(decoded) != ed25519.PrivateKeySize {
+				return fmt.Errorf("stdin must be the base64 operator private key (%d bytes decoded)", ed25519.PrivateKeySize)
+			}
+			priv = ed25519.PrivateKey(decoded)
+		} else {
+			pass, err := readPassphrase("operator key passphrase: ", false)
+			if err != nil {
+				return err
+			}
+			_, priv, err = openOperatorKey(keyPath, pass)
+			if err != nil {
+				return err
+			}
 		}
 		data, err := os.ReadFile(bundlePath)
 		if err != nil {

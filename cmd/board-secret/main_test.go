@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -264,5 +265,38 @@ func TestOperatorKeyEncryptionRoundTrip(t *testing.T) {
 	_, _, err = openOperatorKey(legacyPath, []byte("whatever"))
 	if err == nil || !strings.Contains(err.Error(), "UNENCRYPTED") {
 		t.Fatalf("legacy key err = %v, want the unencrypted-format refusal", err)
+	}
+}
+
+// TestOperatorSignWithStdinKey pins vault mode: the private key arrives
+// base64 on stdin (piped from a password manager), signs a bundle, and the
+// signature verifies against the printed public key. Nothing is written
+// outside the bundle file.
+func TestOperatorSignWithStdinKey(t *testing.T) {
+	home := testHome(t)
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+
+	b := &secrethandoff.KeyBundle{
+		Actor: "agent-a", EncPubKey: make([]byte, 32), SignPubKey: make([]byte, 32),
+		CreatedAt: time.Now().UTC().Truncate(time.Second),
+	}
+	bundlePath := filepath.Join(home, "bundle.json")
+	data, _ := json.Marshal(b)
+	if err := os.WriteFile(bundlePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	keyB64 := base64.StdEncoding.EncodeToString(priv)
+	if err := runWithStdin(t, keyB64+"\n", "operator", "sign", "--key", "-", bundlePath); err != nil {
+		t.Fatalf("sign with stdin key: %v", err)
+	}
+
+	signed, _ := os.ReadFile(bundlePath)
+	var got secrethandoff.KeyBundle
+	if err := json.Unmarshal(signed, &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := secrethandoff.VerifyBundle(&got, pub); err != nil {
+		t.Fatalf("signature does not verify: %v", err)
 	}
 }
