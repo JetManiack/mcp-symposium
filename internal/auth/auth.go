@@ -47,8 +47,18 @@ func RequireBearer(db *gorm.DB, next http.Handler) http.Handler {
 
 		actor, err := Authenticate(db, token)
 		if err != nil {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="rendezvous"`)
-			http.Error(w, "invalid or revoked token", http.StatusUnauthorized)
+			// Only "this token does not exist / is revoked" is a 401. A
+			// database error (e.g. during a rollout, before the DB is
+			// reachable) must be 503: clients treat 401 as "token revoked"
+			// and give up, which turned a transient outage into dead
+			// watchers in the field.
+			if errors.Is(err, storage.ErrInvalidToken) {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="rendezvous"`)
+				http.Error(w, "invalid or revoked token", http.StatusUnauthorized)
+				return
+			}
+			slog.Error("authentication lookup failed", "error", err)
+			http.Error(w, "authentication temporarily unavailable", http.StatusServiceUnavailable)
 			return
 		}
 
