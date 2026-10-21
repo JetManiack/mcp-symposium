@@ -70,7 +70,9 @@ func run(args []string) error {
 // --- key storage ---------------------------------------------------------
 
 type agentKeys struct {
-	Actor       string `json:"actor"`
+	Actor string `json:"actor"`
+	// ActorID is the immutable board actor UUID (peek/catch_up print it).
+	ActorID     string `json:"actor_id"`
 	EncPub      []byte `json:"enc_pub"`
 	EncPriv     []byte `json:"enc_priv"`
 	SignPub     []byte `json:"sign_pub"`
@@ -111,6 +113,7 @@ func saveKeys(k *agentKeys) error {
 func bundleFromKeys(k *agentKeys) *secrethandoff.KeyBundle {
 	return &secrethandoff.KeyBundle{
 		Actor:      k.Actor,
+		ActorID:    k.ActorID,
 		EncPubKey:  k.EncPub,
 		SignPubKey: k.SignPub,
 		CreatedAt:  time.Unix(k.CreatedAt, 0).UTC(),
@@ -241,8 +244,9 @@ func runOperator(args []string) error {
 
 func runKeygen(args []string) error {
 	actor := flagValue(args, "--actor", "")
-	if actor == "" {
-		return fmt.Errorf("usage: board-secret keygen --actor <nickname> [--operator-pub <base64>]")
+	actorID := flagValue(args, "--actor-id", "")
+	if actor == "" || actorID == "" {
+		return fmt.Errorf("usage: board-secret keygen --actor <nickname> --actor-id <uuid> [--operator-pub <base64>] — the id is immutable and is what the operator signature binds the keys to; peek/catch_up print yours as actor_id")
 	}
 	if _, err := os.Stat(keysPath()); err == nil {
 		return fmt.Errorf("%s already exists; refusing to overwrite an identity (delete it yourself if you mean it)", keysPath())
@@ -256,7 +260,7 @@ func runKeygen(args []string) error {
 		return err
 	}
 	k := &agentKeys{
-		Actor: actor, EncPub: encPub[:], EncPriv: encPriv[:],
+		Actor: actor, ActorID: actorID, EncPub: encPub[:], EncPriv: encPriv[:],
 		SignPub: signPub, SignPriv: signPriv, CreatedAt: time.Now().Unix(),
 	}
 	if opPub := flagValue(args, "--operator-pub", ""); opPub != "" {
@@ -309,6 +313,9 @@ func runSeal(args []string) error {
 	if recipientBundle.Actor != to {
 		return fmt.Errorf("bundle is for actor %q, not %q — refusing (a swapped bundle is exactly the attack pinning exists to stop)", recipientBundle.Actor, to)
 	}
+	if k.ActorID == "" {
+		return fmt.Errorf("local keys predate the actor-id format — re-run keygen with --actor-id")
+	}
 
 	plaintext, err := io.ReadAll(io.LimitReader(os.Stdin, 48*1024))
 	if err != nil {
@@ -324,8 +331,8 @@ func runSeal(args []string) error {
 	}
 	ttl := time.Duration(secs) * time.Second
 
-	env, err := secrethandoff.Seal(plaintext, uuid.NewString(), k.Actor, to, label, class, ttl,
-		recipientBundle.EncPubKey, ed25519.PrivateKey(k.SignPriv))
+	env, err := secrethandoff.Seal(plaintext, uuid.NewString(), k.Actor, k.ActorID,
+		recipientBundle, label, class, ttl, ed25519.PrivateKey(k.SignPriv))
 	if err != nil {
 		return err
 	}
@@ -392,7 +399,10 @@ func runOpen(args []string) error {
 		return err
 	}
 
-	plaintext, err := secrethandoff.Open(env, k.Actor, senderBundle, k.EncPub, k.EncPriv, time.Now())
+	if k.ActorID == "" {
+		return fmt.Errorf("local keys predate the actor-id format — re-run keygen with --actor-id")
+	}
+	plaintext, err := secrethandoff.Open(env, k.ActorID, senderBundle, k.EncPub, k.EncPriv, time.Now())
 	if err != nil {
 		return err
 	}

@@ -30,7 +30,7 @@ func writeAgentKeys(t *testing.T, actor string, operatorPub ed25519.PublicKey) *
 	encPub, encPriv, _ := box.GenerateKey(rand.Reader)
 	signPub, signPriv, _ := ed25519.GenerateKey(rand.Reader)
 	k := &agentKeys{
-		Actor: actor, EncPub: encPub[:], EncPriv: encPriv[:],
+		Actor: actor, ActorID: "id-" + actor, EncPub: encPub[:], EncPriv: encPriv[:],
 		SignPub: signPub, SignPriv: signPriv,
 		OperatorPub: operatorPub, CreatedAt: time.Now().Unix(),
 	}
@@ -44,7 +44,7 @@ func signedBundle(t *testing.T, actor string, encPub []byte, signPub ed25519.Pub
 	opPriv ed25519.PrivateKey, createdAt time.Time) *secrethandoff.KeyBundle {
 	t.Helper()
 	b := &secrethandoff.KeyBundle{
-		Actor: actor, EncPubKey: encPub, SignPubKey: signPub,
+		Actor: actor, ActorID: "id-" + actor, EncPubKey: encPub, SignPubKey: signPub,
 		CreatedAt: createdAt.UTC().Truncate(time.Second),
 	}
 	b.OperatorSig = ed25519.Sign(opPriv, secrethandoff.CanonicalBundleBytes(b))
@@ -106,8 +106,9 @@ func TestOpenVerifiedSenderMustMatchHeaderFrom(t *testing.T) {
 	malloryBundle := signedBundle(t, "mallory", mEncPub[:], mSignPub, opPriv, time.Now())
 	bundlePath := writeBundleFile(t, home, malloryBundle)
 
-	env, err := secrethandoff.Seal([]byte("x"), "sid-imp", "alice", "me", "l",
-		secrethandoff.ClassRoutine, time.Minute, me.EncPub, mSignPriv)
+	meBundle := &secrethandoff.KeyBundle{Actor: "me", ActorID: me.ActorID, EncPubKey: me.EncPub}
+	env, err := secrethandoff.Seal([]byte("x"), "sid-imp", "alice", "id-alice", meBundle, "l",
+		secrethandoff.ClassRoutine, time.Minute, mSignPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +134,9 @@ func TestOpenReplayRefused(t *testing.T) {
 	aliceBundle := signedBundle(t, "alice", aEncPub[:], aSignPub, opPriv, time.Now())
 	bundlePath := writeBundleFile(t, home, aliceBundle)
 
-	env, _ := secrethandoff.Seal([]byte("v"), "sid-replay", "alice", "me", "l",
-		secrethandoff.ClassRoutine, time.Minute, me.EncPub, aSignPriv)
+	meBundle := &secrethandoff.KeyBundle{Actor: "me", ActorID: me.ActorID, EncPubKey: me.EncPub}
+	env, _ := secrethandoff.Seal([]byte("v"), "sid-replay", "alice", "id-alice", meBundle, "l",
+		secrethandoff.ClassRoutine, time.Minute, aSignPriv)
 	envJSON, _ := secrethandoff.MarshalEnvelope(env)
 
 	if err := runWithStdin(t, string(envJSON), "open", "--from-bundle", bundlePath, "--out", "a"); err != nil {
@@ -166,8 +168,9 @@ func TestOpenForceResetsPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	env, _ := secrethandoff.Seal([]byte("new"), "sid-perm", "alice", "me", "l",
-		secrethandoff.ClassRoutine, time.Minute, me.EncPub, aSignPriv)
+	meBundle := &secrethandoff.KeyBundle{Actor: "me", ActorID: me.ActorID, EncPubKey: me.EncPub}
+	env, _ := secrethandoff.Seal([]byte("new"), "sid-perm", "alice", "id-alice", meBundle, "l",
+		secrethandoff.ClassRoutine, time.Minute, aSignPriv)
 	envJSON, _ := secrethandoff.MarshalEnvelope(env)
 	if err := runWithStdin(t, string(envJSON), "open", "--from-bundle", bundlePath, "--out", "t", "--force"); err != nil {
 		t.Fatalf("open --force: %v", err)
@@ -277,7 +280,7 @@ func TestOperatorSignWithStdinKey(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
 
 	b := &secrethandoff.KeyBundle{
-		Actor: "agent-a", EncPubKey: make([]byte, 32), SignPubKey: make([]byte, 32),
+		Actor: "agent-a", ActorID: "id-agent-a", EncPubKey: make([]byte, 32), SignPubKey: make([]byte, 32),
 		CreatedAt: time.Now().UTC().Truncate(time.Second),
 	}
 	bundlePath := filepath.Join(home, "bundle.json")

@@ -147,3 +147,28 @@ func TestSweepExpiredSecrets(t *testing.T) {
 		t.Fatal("sweep left the expired blob in place")
 	}
 }
+
+// TestNicknameLockedWhileBundlePublished pins the M5 interim guard: an
+// actor with a published key bundle can't change its nickname (the signed
+// bundle names it; a rename requires a bundle rotation).
+func TestNicknameLockedWhileBundlePublished(t *testing.T) {
+	db := openTestDB(t)
+	agent, _ := storage.CreateAgent(db, "locky")
+
+	if _, err := storage.UpsertActorProfile(db, agent.ID, "Locky", "locky", "", nil); err != nil {
+		t.Fatalf("initial profile: %v", err)
+	}
+	if err := storage.UpsertKeyBundle(db, agent.ID, `{"actor":"locky"}`); err != nil {
+		t.Fatalf("publish bundle: %v", err)
+	}
+
+	// Same nickname: still fine (bio edits etc.).
+	if _, err := storage.UpsertActorProfile(db, agent.ID, "Locky", "locky", "new bio", nil); err != nil {
+		t.Fatalf("same-nickname upsert: %v", err)
+	}
+
+	// A rename must be refused while the bundle exists.
+	if _, err := storage.UpsertActorProfile(db, agent.ID, "Locky", "sneaky", "", nil); err == nil {
+		t.Fatal("nickname change accepted despite a published key bundle")
+	}
+}

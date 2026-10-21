@@ -56,9 +56,13 @@ func setKeyBundleHandler(db *gorm.DB) mcp.ToolHandlerFor[SetKeyBundleInput, SetK
 		if len(b.EncPubKey) != 32 || len(b.SignPubKey) != 32 || len(b.OperatorSig) == 0 {
 			return nil, SetKeyBundleOutput{}, fmt.Errorf("bundle is missing keys or the operator signature")
 		}
-		// The bundle's actor must be the caller: otherwise a stolen token can
-		// publish someone else's (or an old rotated) signed bundle under its
-		// own slot and confuse senders.
+		// The bundle's immutable actor_id must be the caller's: a stolen
+		// token can grab names via set_profile, but it cannot change its ID.
+		if b.ActorID != actor.ID {
+			return nil, SetKeyBundleOutput{}, fmt.Errorf("bundle actor_id %q is not the calling actor's id", b.ActorID)
+		}
+		// The display name in the bundle should still match, for humans
+		// reading fingerprints and audit output.
 		if named, err := storage.FindActorByName(db, b.Actor); err != nil || named.ID != actor.ID {
 			return nil, SetKeyBundleOutput{}, fmt.Errorf("bundle is for actor %q, which is not the calling actor", b.Actor)
 		}
@@ -118,8 +122,8 @@ func sendSecretHandler(db *gorm.DB, hub *activity.Hub) mcp.ToolHandlerFor[SendSe
 			return nil, SendSecretOutput{}, fmt.Errorf("envelope is not valid JSON: %w", err)
 		}
 		h := env.Header
-		if h.V != 1 {
-			return nil, SendSecretOutput{}, fmt.Errorf("unsupported envelope version %d", h.V)
+		if h.V != 2 {
+			return nil, SendSecretOutput{}, fmt.Errorf("unsupported envelope version %d — regenerate with a current board-secret CLI", h.V)
 		}
 		// TTLSeconds is range-checked BEFORE the duration multiply: a huge
 		// value would overflow time.Duration and could slip past the cap.
@@ -152,20 +156,21 @@ func sendSecretHandler(db *gorm.DB, hub *activity.Hub) mcp.ToolHandlerFor[SendSe
 			return nil, SendSecretOutput{}, fmt.Errorf("ciphertext does not match the signed header's sha256")
 		}
 
-		// The envelope's From must be the calling actor: the metadata row,
-		// operator feed and foreign-fetch alarms all trust it, so a caller
-		// must not be able to send as someone else.
-		if named, err := storage.FindActorByName(db, h.From); err != nil || named.ID != actor.ID {
-			return nil, SendSecretOutput{}, fmt.Errorf("envelope From=%q is not the calling actor", h.From)
-		}
-		// Likewise To must match the addressed recipient.
-		if h.To != in.To {
-			return nil, SendSecretOutput{}, fmt.Errorf("envelope To=%q does not match the to argument %q", h.To, in.To)
+		// The envelope's FromID must be the calling actor's immutable ID:
+		// the metadata row, operator feed and foreign-fetch alarms all trust
+		// it, and names are mutable (a stolen token can grab one).
+		if h.FromID != actor.ID {
+			return nil, SendSecretOutput{}, fmt.Errorf("envelope from_id %q is not the calling actor's id", h.FromID)
 		}
 
-		recipient, err := storage.FindActorByName(db, in.To)
-		if err != nil {
-			return nil, SendSecretOutput{}, err
+		// The recipient is taken from the signed header's immutable ToID;
+		// the `to` argument is only cross-checked as a typo guard.
+		var recipient storage.Actor
+		if err := db.First(&recipient, "id = ?", h.ToID).Error; err != nil {
+			return nil, SendSecretOutput{}, fmt.Errorf("envelope to_id %q is not a known actor", h.ToID)
+		}
+		if named, err := storage.FindActorByName(db, in.To); err != nil || named.ID != recipient.ID {
+			return nil, SendSecretOutput{}, fmt.Errorf("the to argument %q does not resolve to the envelope's to_id — re-fetch the recipient's bundle", in.To)
 		}
 		if recipient.ID == actor.ID {
 			return nil, SendSecretOutput{}, fmt.Errorf("cannot send a secret to yourself")

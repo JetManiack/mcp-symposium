@@ -11,6 +11,7 @@ import (
 
 type party struct {
 	name     string
+	id       string
 	encPub   []byte
 	encPriv  []byte
 	signPub  ed25519.PublicKey
@@ -28,12 +29,13 @@ func newParty(t *testing.T, name string, operator ed25519.PrivateKey) *party {
 	if err != nil {
 		t.Fatal(err)
 	}
+	id := "id-" + name
 	b := &KeyBundle{
-		Actor: name, EncPubKey: encPub[:], SignPubKey: signPub,
+		Actor: name, ActorID: id, EncPubKey: encPub[:], SignPubKey: signPub,
 		CreatedAt: time.Now().UTC().Truncate(time.Second),
 	}
 	b.OperatorSig = ed25519.Sign(operator, CanonicalBundleBytes(b))
-	return &party{name, encPub[:], encPriv[:], signPub, signPriv, b}
+	return &party{name, id, encPub[:], encPriv[:], signPub, signPriv, b}
 }
 
 func testOperator(t *testing.T) (ed25519.PublicKey, ed25519.PrivateKey) {
@@ -54,13 +56,12 @@ func TestSealOpenRoundTrip(t *testing.T) {
 		t.Fatalf("VerifyBundle(bob): %v", err)
 	}
 
-	env, err := Seal([]byte("the-credential"), "sid-1", "alice", "bob", "test-label",
-		ClassRoutine, 15*time.Minute, bob.encPub, alice.signPriv)
+	env, err := Seal([]byte("the-credential"), "sid-1", "alice", alice.id, bob.bundle, "test-label", ClassRoutine, 15*time.Minute, alice.signPriv)
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
 	}
 
-	got, err := Open(env, "bob", alice.bundle, bob.encPub, bob.encPriv, time.Now())
+	got, err := Open(env, bob.id, alice.bundle, bob.encPub, bob.encPriv, time.Now())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -77,8 +78,8 @@ func TestOpenRefusesWrongRecipient(t *testing.T) {
 	bob := newParty(t, "bob", opPriv)
 	carol := newParty(t, "carol", opPriv)
 
-	env, _ := Seal([]byte("x"), "sid", "alice", "bob", "l", ClassRoutine, time.Minute, bob.encPub, alice.signPriv)
-	if _, err := Open(env, "carol", alice.bundle, carol.encPub, carol.encPriv, time.Now()); err == nil {
+	env, _ := Seal([]byte("x"), "sid", "alice", alice.id, bob.bundle, "l", ClassRoutine, time.Minute, alice.signPriv)
+	if _, err := Open(env, carol.id, alice.bundle, carol.encPub, carol.encPriv, time.Now()); err == nil {
 		t.Fatal("Open accepted an envelope addressed to someone else")
 	}
 }
@@ -88,9 +89,9 @@ func TestOpenRefusesExpiredTTL(t *testing.T) {
 	alice := newParty(t, "alice", opPriv)
 	bob := newParty(t, "bob", opPriv)
 
-	env, _ := Seal([]byte("x"), "sid", "alice", "bob", "l", ClassRoutine, time.Minute, bob.encPub, alice.signPriv)
+	env, _ := Seal([]byte("x"), "sid", "alice", alice.id, bob.bundle, "l", ClassRoutine, time.Minute, alice.signPriv)
 	late := time.Now().Add(2 * time.Minute)
-	if _, err := Open(env, "bob", alice.bundle, bob.encPub, bob.encPriv, late); err == nil {
+	if _, err := Open(env, bob.id, alice.bundle, bob.encPub, bob.encPriv, late); err == nil {
 		t.Fatal("Open accepted an expired envelope")
 	}
 }
@@ -102,8 +103,8 @@ func TestOpenRefusesForgedSender(t *testing.T) {
 	mallory := newParty(t, "mallory", opPriv)
 
 	// Mallory seals an envelope claiming From=alice but signs with her key.
-	env, _ := Seal([]byte("x"), "sid", "alice", "bob", "l", ClassRoutine, time.Minute, bob.encPub, mallory.signPriv)
-	if _, err := Open(env, "bob", alice.bundle, bob.encPub, bob.encPriv, time.Now()); err == nil {
+	env, _ := Seal([]byte("x"), "sid", "alice", alice.id, bob.bundle, "l", ClassRoutine, time.Minute, mallory.signPriv)
+	if _, err := Open(env, bob.id, alice.bundle, bob.encPub, bob.encPriv, time.Now()); err == nil {
 		t.Fatal("Open accepted a sender signature that doesn't verify against the claimed sender's pinned bundle")
 	}
 }
@@ -114,9 +115,9 @@ func TestOpenRefusesTamperedHeader(t *testing.T) {
 	bob := newParty(t, "bob", opPriv)
 	carol := newParty(t, "carol", opPriv)
 
-	env, _ := Seal([]byte("x"), "sid", "alice", "bob", "l", ClassRoutine, time.Minute, bob.encPub, alice.signPriv)
-	env.Header.To = "carol" // redirect attempt after signing
-	if _, err := Open(env, "carol", alice.bundle, carol.encPub, carol.encPriv, time.Now()); err == nil {
+	env, _ := Seal([]byte("x"), "sid", "alice", alice.id, bob.bundle, "l", ClassRoutine, time.Minute, alice.signPriv)
+	env.Header.ToID = carol.id // redirect attempt after signing
+	if _, err := Open(env, carol.id, alice.bundle, carol.encPub, carol.encPriv, time.Now()); err == nil {
 		t.Fatal("Open accepted a redirected (tampered) header")
 	}
 }
@@ -126,10 +127,10 @@ func TestOpenRefusesSwappedCiphertext(t *testing.T) {
 	alice := newParty(t, "alice", opPriv)
 	bob := newParty(t, "bob", opPriv)
 
-	env1, _ := Seal([]byte("real"), "sid-1", "alice", "bob", "l", ClassRoutine, time.Minute, bob.encPub, alice.signPriv)
-	env2, _ := Seal([]byte("fake"), "sid-2", "alice", "bob", "l", ClassRoutine, time.Minute, bob.encPub, alice.signPriv)
+	env1, _ := Seal([]byte("real"), "sid-1", "alice", alice.id, bob.bundle, "l", ClassRoutine, time.Minute, alice.signPriv)
+	env2, _ := Seal([]byte("fake"), "sid-2", "alice", alice.id, bob.bundle, "l", ClassRoutine, time.Minute, alice.signPriv)
 	env1.Ciphertext = env2.Ciphertext
-	if _, err := Open(env1, "bob", alice.bundle, bob.encPub, bob.encPriv, time.Now()); err == nil {
+	if _, err := Open(env1, bob.id, alice.bundle, bob.encPub, bob.encPriv, time.Now()); err == nil {
 		t.Fatal("Open accepted an envelope whose ciphertext doesn't match the signed hash")
 	}
 }

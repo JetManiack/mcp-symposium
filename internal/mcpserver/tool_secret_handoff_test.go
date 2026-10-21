@@ -43,8 +43,8 @@ func callToolExpectError(t *testing.T, session *mcp.ClientSession, name string, 
 // gate, body guard).
 func TestSecretHandoffEndToEnd(t *testing.T) {
 	db := openTestDB(t)
-	_, senderToken := newAgentWithToken(t, db, "hand-sender")
-	_, recipientToken := newAgentWithToken(t, db, "hand-recipient")
+	senderActor, senderToken := newAgentWithToken(t, db, "hand-sender")
+	recipientActor, recipientToken := newAgentWithToken(t, db, "hand-recipient")
 	_, thiefToken := newAgentWithToken(t, db, "hand-thief")
 
 	senderSession, cleanupS := newTestSession(t, db, senderToken)
@@ -61,16 +61,16 @@ func TestSecretHandoffEndToEnd(t *testing.T) {
 	rEncPub, rEncPriv, _ := box.GenerateKey(rand.Reader)
 	rSignPub, _, _ := ed25519.GenerateKey(rand.Reader)
 
-	mkBundle := func(actor string, encPub []byte, signPub ed25519.PublicKey) *secrethandoff.KeyBundle {
+	mkBundle := func(actor, actorID string, encPub []byte, signPub ed25519.PublicKey) *secrethandoff.KeyBundle {
 		b := &secrethandoff.KeyBundle{
-			Actor: actor, EncPubKey: encPub, SignPubKey: signPub,
+			Actor: actor, ActorID: actorID, EncPubKey: encPub, SignPubKey: signPub,
 			CreatedAt: time.Now().UTC().Truncate(time.Second),
 		}
 		b.OperatorSig = ed25519.Sign(opPriv, secrethandoff.CanonicalBundleBytes(b))
 		return b
 	}
-	senderBundle := mkBundle("hand-sender", sEncPub[:], sSignPub)
-	recipientBundle := mkBundle("hand-recipient", rEncPub[:], rSignPub)
+	senderBundle := mkBundle("hand-sender", senderActor.ID, sEncPub[:], sSignPub)
+	recipientBundle := mkBundle("hand-recipient", recipientActor.ID, rEncPub[:], rSignPub)
 
 	// Publish both bundles over MCP.
 	sbJSON, _ := json.Marshal(senderBundle)
@@ -87,8 +87,8 @@ func TestSecretHandoffEndToEnd(t *testing.T) {
 		t.Fatalf("unmarshal fetched bundle: %v", err)
 	}
 
-	env, err := secrethandoff.Seal([]byte("sk-live-credential"), uuid.NewString(), "hand-sender", "hand-recipient",
-		"test-cred", secrethandoff.ClassRoutine, 10*time.Minute, fetchedBundle.EncPubKey, sSignPriv)
+	env, err := secrethandoff.Seal([]byte("sk-live-credential"), uuid.NewString(), "hand-sender", senderActor.ID,
+		&fetchedBundle, "test-cred", secrethandoff.ClassRoutine, 10*time.Minute, sSignPriv)
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestSecretHandoffEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unmarshal fetched envelope: %v", err)
 	}
-	plaintext, err := secrethandoff.Open(gotEnv, "hand-recipient", senderBundle, rEncPub[:], rEncPriv[:], time.Now())
+	plaintext, err := secrethandoff.Open(gotEnv, recipientActor.ID, senderBundle, rEncPub[:], rEncPriv[:], time.Now())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -133,8 +133,8 @@ func TestSecretHandoffEndToEnd(t *testing.T) {
 // TestAdminClassSecretNeedsApproval covers the operator gate over MCP.
 func TestAdminClassSecretNeedsApproval(t *testing.T) {
 	db := openTestDB(t)
-	_, senderToken := newAgentWithToken(t, db, "adm-sender")
-	_, recipientToken := newAgentWithToken(t, db, "adm-recipient")
+	admSender, senderToken := newAgentWithToken(t, db, "adm-sender")
+	admRecipient, recipientToken := newAgentWithToken(t, db, "adm-recipient")
 
 	senderSession, cleanupS := newTestSession(t, db, senderToken)
 	defer cleanupS()
@@ -146,8 +146,9 @@ func TestAdminClassSecretNeedsApproval(t *testing.T) {
 	rEncPub, _, _ := box.GenerateKey(rand.Reader)
 	_ = opPriv
 
-	env, err := secrethandoff.Seal([]byte("cluster-admin-cred"), uuid.NewString(), "adm-sender", "adm-recipient",
-		"k8s-admin", secrethandoff.ClassAdmin, 10*time.Minute, rEncPub[:], sSignPriv)
+	admBundle := &secrethandoff.KeyBundle{Actor: "adm-recipient", ActorID: admRecipient.ID, EncPubKey: rEncPub[:]}
+	env, err := secrethandoff.Seal([]byte("cluster-admin-cred"), uuid.NewString(), "adm-sender", admSender.ID,
+		admBundle, "k8s-admin", secrethandoff.ClassAdmin, 10*time.Minute, sSignPriv)
 	if err != nil {
 		t.Fatalf("Seal: %v", err)
 	}
@@ -201,8 +202,8 @@ func TestBodyGuardRejectsSecretShapedPosts(t *testing.T) {
 func TestSendSecretRefusesForgedFrom(t *testing.T) {
 	db := openTestDB(t)
 	_, impToken := newAgentWithToken(t, db, "imp-c")
-	newAgentWithToken(t, db, "imp-a") // the victim whose name is claimed
-	_, recipToken := newAgentWithToken(t, db, "imp-r")
+	victim, _ := newAgentWithToken(t, db, "imp-a") // the victim whose identity is claimed
+	impRecipient, recipToken := newAgentWithToken(t, db, "imp-r")
 	_ = recipToken
 
 	impSession, cleanup := newTestSession(t, db, impToken)
@@ -210,8 +211,9 @@ func TestSendSecretRefusesForgedFrom(t *testing.T) {
 
 	_, signPriv, _ := ed25519.GenerateKey(rand.Reader)
 	rEncPub, _, _ := box.GenerateKey(rand.Reader)
-	env, err := secrethandoff.Seal([]byte("x"), uuid.NewString(), "imp-a", "imp-r", "l",
-		secrethandoff.ClassRoutine, time.Minute, rEncPub[:], signPriv)
+	impBundle := &secrethandoff.KeyBundle{Actor: "imp-r", ActorID: impRecipient.ID, EncPubKey: rEncPub[:]}
+	env, err := secrethandoff.Seal([]byte("x"), uuid.NewString(), "imp-a", victim.ID,
+		impBundle, "l", secrethandoff.ClassRoutine, time.Minute, signPriv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,6 +225,7 @@ func TestSendSecretRefusesForgedFrom(t *testing.T) {
 	if !strings.Contains(msg, "not the calling actor") {
 		t.Fatalf("forged From error = %q", msg)
 	}
+	_ = victim
 }
 
 // TestSetKeyBundleRefusesForeignActor pins the k8s finding 2: a caller
@@ -230,7 +233,7 @@ func TestSendSecretRefusesForgedFrom(t *testing.T) {
 func TestSetKeyBundleRefusesForeignActor(t *testing.T) {
 	db := openTestDB(t)
 	_, cToken := newAgentWithToken(t, db, "bundle-c")
-	newAgentWithToken(t, db, "bundle-a")
+	victimA, _ := newAgentWithToken(t, db, "bundle-a")
 
 	session, cleanup := newTestSession(t, db, cToken)
 	defer cleanup()
@@ -239,7 +242,7 @@ func TestSetKeyBundleRefusesForeignActor(t *testing.T) {
 	encPub, _, _ := box.GenerateKey(rand.Reader)
 	signPub, _, _ := ed25519.GenerateKey(rand.Reader)
 	b := &secrethandoff.KeyBundle{
-		Actor: "bundle-a", EncPubKey: encPub[:], SignPubKey: signPub,
+		Actor: "bundle-a", ActorID: victimA.ID, EncPubKey: encPub[:], SignPubKey: signPub,
 		CreatedAt: time.Now().UTC().Truncate(time.Second),
 	}
 	b.OperatorSig = ed25519.Sign(opPriv, secrethandoff.CanonicalBundleBytes(b))
@@ -249,6 +252,7 @@ func TestSetKeyBundleRefusesForeignActor(t *testing.T) {
 	if !strings.Contains(msg, "not the calling actor") {
 		t.Fatalf("foreign bundle error = %q", msg)
 	}
+	_ = victimA
 }
 
 // TestToolAllowlistScopesActor pins the per-actor tool allowlist: a scoped
@@ -315,8 +319,8 @@ func TestExternalIDUpsert(t *testing.T) {
 // just fire a hub nudge that a waiter then can't see anything for.
 func TestForeignFetchAlertReachesSender(t *testing.T) {
 	db := openTestDB(t)
-	_, senderToken := newAgentWithToken(t, db, "al-sender")
-	newAgentWithToken(t, db, "al-recipient")
+	alSender, senderToken := newAgentWithToken(t, db, "al-sender")
+	alRecipient, _ := newAgentWithToken(t, db, "al-recipient")
 	_, thiefToken := newAgentWithToken(t, db, "al-thief")
 
 	senderSession, cleanupS := newTestSession(t, db, senderToken)
@@ -326,8 +330,9 @@ func TestForeignFetchAlertReachesSender(t *testing.T) {
 
 	_, sSignPriv, _ := ed25519.GenerateKey(rand.Reader)
 	rEncPub, _, _ := box.GenerateKey(rand.Reader)
-	env, err := secrethandoff.Seal([]byte("x"), uuid.NewString(), "al-sender", "al-recipient", "l",
-		secrethandoff.ClassRoutine, 10*time.Minute, rEncPub[:], sSignPriv)
+	alBundle := &secrethandoff.KeyBundle{Actor: "al-recipient", ActorID: alRecipient.ID, EncPubKey: rEncPub[:]}
+	env, err := secrethandoff.Seal([]byte("x"), uuid.NewString(), "al-sender", alSender.ID,
+		alBundle, "l", secrethandoff.ClassRoutine, 10*time.Minute, sSignPriv)
 	if err != nil {
 		t.Fatal(err)
 	}

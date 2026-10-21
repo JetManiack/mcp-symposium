@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -65,7 +66,13 @@ func callTool(t *testing.T, session *mcp.ClientSession, name string, args map[st
 		t.Fatalf("CallTool(%s) error = %v", name, err)
 	}
 	if result.IsError {
-		t.Fatalf("CallTool(%s) returned a tool error: %+v", name, result.Content)
+		var sb strings.Builder
+		for _, c := range result.Content {
+			if tc, ok := c.(*mcp.TextContent); ok {
+				sb.WriteString(tc.Text)
+			}
+		}
+		t.Fatalf("CallTool(%s) returned a tool error: %s", name, sb.String())
 	}
 
 	data, err := json.Marshal(result.StructuredContent)

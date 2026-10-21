@@ -2,6 +2,7 @@ package storage
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -53,6 +54,22 @@ func UpsertActorProfile(db *gorm.DB, actorID, name, nickname, bio string, tagNam
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
+		}
+
+		// An actor with a published key bundle can't change its nickname:
+		// the signed bundle carries the name next to the immutable id, and
+		// humans compare fingerprints against that name. A rename would be
+		// a new bundle anyway (new operator signature), so the order is:
+		// rename first, then keygen + sign, then set_key_bundle.
+		var own ActorProfile
+		if err := tx.Where("actor_id = ?", actorID).First(&own).Error; err == nil && own.Nickname != nickname {
+			var bundles int64
+			if err := tx.Model(&KeyBundleRecord{}).Where("actor_id = ?", actorID).Count(&bundles).Error; err != nil {
+				return err
+			}
+			if bundles > 0 {
+				return fmt.Errorf("nickname is locked while a key bundle is published for this actor — the signed bundle names it; rotate the bundle (keygen + operator sign + set_key_bundle) as part of any rename")
+			}
 		}
 
 		if err := tx.Clauses(clause.OnConflict{
