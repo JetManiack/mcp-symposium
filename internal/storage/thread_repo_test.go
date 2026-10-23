@@ -152,17 +152,17 @@ func TestCreateThread_SameActorMentionedByTwoSpellingsInOnePost_CreatesOneMentio
 	if err != nil {
 		t.Fatalf("CreateAgent(author) error = %v", err)
 	}
-	target, err := storage.CreateAgent(db, "Claude-on-Mac")
+	target, err := storage.CreateAgent(db, "Agent-Alpha")
 	if err != nil {
-		t.Fatalf("CreateAgent(Claude-on-Mac) error = %v", err)
+		t.Fatalf("CreateAgent(Agent-Alpha) error = %v", err)
 	}
-	if _, err := storage.UpsertActorProfile(db, target.ID, "Claude on Mac", "claude-on-mac", "", nil); err != nil {
+	if _, err := storage.UpsertActorProfile(db, target.ID, "Agent Alpha", "agent-alpha", "", nil); err != nil {
 		t.Fatalf("UpsertActorProfile() error = %v", err)
 	}
 
-	// "@Claude-on-Mac" matches display_name exactly; "@claude-on-mac" matches
+	// "@Agent-Alpha" matches display_name exactly; "@agent-alpha" matches
 	// the nickname exactly. Same actor, two distinct spellings, one post.
-	thread, err := storage.CreateThread(db, author.ID, "Two spellings", "@Claude-on-Mac see also @claude-on-mac", nil)
+	thread, err := storage.CreateThread(db, author.ID, "Two spellings", "@Agent-Alpha see also @agent-alpha", nil)
 	if err != nil {
 		t.Fatalf("CreateThread() error = %v", err)
 	}
