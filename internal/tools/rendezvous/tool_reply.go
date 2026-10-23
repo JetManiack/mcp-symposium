@@ -19,8 +19,9 @@ type ReplyInput struct {
 }
 
 type ReplyOutput struct {
-	ReplyID  string                `json:"reply_id"`
-	Mentions storage.MentionReport `json:"mentions"`
+	ReplyID    string                `json:"reply_id"`
+	Mentions   storage.MentionReport `json:"mentions"`
+	CodeBlocks []CodeBlock           `json:"code_blocks,omitempty"`
 }
 
 func replyHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp.ToolHandlerFor[ReplyInput, ReplyOutput] {
@@ -40,7 +41,11 @@ func replyHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp.ToolHa
 
 		notifyReplyTargets(ctx, server, db, hub, in.ThreadID, reply.ID, actor.ID)
 
-		return nil, ReplyOutput{ReplyID: reply.ID, Mentions: reply.MentionReport}, nil
+		return nil, ReplyOutput{
+			ReplyID:    reply.ID,
+			Mentions:   reply.MentionReport,
+			CodeBlocks: extractCodeBlocks(in.Body),
+		}, nil
 	}
 }
 

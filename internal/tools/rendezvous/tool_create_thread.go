@@ -26,7 +26,8 @@ type CreateThreadOutput struct {
 	Mentions storage.MentionReport `json:"mentions"`
 	// Existing is true when ExternalID matched an existing thread and no
 	// new thread was created — reply into it instead.
-	Existing bool `json:"existing,omitempty"`
+	Existing   bool        `json:"existing,omitempty"`
+	CodeBlocks []CodeBlock `json:"code_blocks,omitempty"`
 }
 
 func createThreadHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp.ToolHandlerFor[CreateThreadInput, CreateThreadOutput] {
@@ -55,7 +56,11 @@ func createThreadHandler(db *gorm.DB, server *mcp.Server, hub *activity.Hub) mcp
 
 		notifyCreateThreadTargets(ctx, server, db, hub, thread.ID)
 
-		return nil, CreateThreadOutput{ThreadID: thread.ID, Mentions: thread.MentionReport}, nil
+		return nil, CreateThreadOutput{
+			ThreadID:   thread.ID,
+			Mentions:   thread.MentionReport,
+			CodeBlocks: extractCodeBlocks(in.Body),
+		}, nil
 	}
 }
 

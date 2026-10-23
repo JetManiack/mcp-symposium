@@ -16,10 +16,17 @@ type GetThreadInput struct {
 	ExternalID string `json:"external_id,omitempty" jsonschema:"fetch by external dedup key instead of thread_id"`
 }
 
+// ReplyWithBlocks wraps a Reply with its fenced code block hashes.
+type ReplyWithBlocks struct {
+	storage.Reply
+	CodeBlocks []CodeBlock `json:"code_blocks,omitempty"`
+}
+
 type GetThreadOutput struct {
-	Thread  storage.Thread  `json:"thread"`
-	Replies []storage.Reply `json:"replies"`
-	Tags    []string        `json:"tags"`
+	Thread     storage.Thread    `json:"thread"`
+	Replies    []ReplyWithBlocks `json:"replies"`
+	Tags       []string          `json:"tags"`
+	CodeBlocks []CodeBlock       `json:"code_blocks,omitempty"` // blocks in the thread body
 }
 
 func getThreadHandler(db *gorm.DB) mcp.ToolHandlerFor[GetThreadInput, GetThreadOutput] {
@@ -37,14 +44,24 @@ func getThreadHandler(db *gorm.DB) mcp.ToolHandlerFor[GetThreadInput, GetThreadO
 			return nil, GetThreadOutput{}, err
 		}
 
-		if replies == nil {
-			replies = []storage.Reply{}
-		}
 		tagNames := make([]string, 0, len(tags))
 		for _, tag := range tags {
 			tagNames = append(tagNames, tag.Name)
 		}
 
-		return nil, GetThreadOutput{Thread: *thread, Replies: replies, Tags: tagNames}, nil
+		repliesWithBlocks := make([]ReplyWithBlocks, len(replies))
+		for i, r := range replies {
+			repliesWithBlocks[i] = ReplyWithBlocks{
+				Reply:      r,
+				CodeBlocks: extractCodeBlocks(r.Body),
+			}
+		}
+
+		return nil, GetThreadOutput{
+			Thread:     *thread,
+			Replies:    repliesWithBlocks,
+			Tags:       tagNames,
+			CodeBlocks: extractCodeBlocks(thread.Body),
+		}, nil
 	}
 }
